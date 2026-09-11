@@ -6,11 +6,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -33,7 +34,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
-import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
+import coil.compose.SubcomposeAsyncImage
+import coil.compose.SubcomposeAsyncImageContent
 import com.osiris.app.data.model.CctvCamera
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -52,7 +55,9 @@ fun CctvViewerDialog(camera: CctvCamera, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface) {
             Column(
-                modifier = Modifier.padding(16.dp),
+                modifier = Modifier
+                    .widthIn(min = 280.dp, max = 360.dp)
+                    .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(camera.name ?: "Caméra", style = MaterialTheme.typography.titleMedium)
@@ -126,12 +131,22 @@ private fun CctvLiveSnapshot(feedUrl: String, cameraName: String?) {
         )
     }
     Spacer(Modifier.height(6.dp))
-    AsyncImage(
+    SubcomposeAsyncImage(
         model = snapshotUrl,
         contentDescription = cameraName,
-        modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp),
+        modifier = Modifier.fillMaxWidth().height(220.dp),
         contentScale = ContentScale.Fit,
-    )
+    ) {
+        when (val state = painter.state) {
+            is AsyncImagePainter.State.Loading -> CircularProgressIndicator()
+            is AsyncImagePainter.State.Error -> Text(
+                "Échec du chargement : ${state.result.throwable.message ?: state.result.throwable::class.simpleName}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+            else -> SubcomposeAsyncImageContent()
+        }
+    }
 }
 
 private fun cacheBust(url: String): String {
