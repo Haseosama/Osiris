@@ -66,8 +66,16 @@ Au premier lancement, ouvre **Réglages** et renseigne l'URL de ton backend (ex.
       certificats SSL, IP intelligence, CVE, wallet crypto, sanctions OFAC, espace
       (`/api/space-weather`). Chaque outil affiche la réponse JSON brute mise en forme plutôt que
       des vues dédiées par outil — suffisant pour un premier jet, à enrichir en Phase 5 si besoin
-- [ ] **Phase 5** — polish (vues RECON dédiées par outil plutôt que JSON brut, thème, cadence de
-      polling, icône, offline)
+- [x] **Phase 5** — vues RECON dédiées pour les 4 outils qui s'y prêtaient bien (CVE, DNS, IP
+      Intelligence, Sanctions OFAC — CveResult/DnsResult/IpIntelResult/SanctionsResult typés,
+      avec repli automatique sur le JSON brut si le décodage échoue) ; scanner/WHOIS/certificats
+      SSL/wallet crypto/espace restent en JSON brut, leurs schémas étant trop profonds ou trop
+      instables pour le rapport effort/valeur d'un DTO dédié ; bannière "Backend injoignable" sur
+      la carte quand toutes les couches actives échouent contre un backend pourtant configuré
+      (distinct du bandeau "backend non configuré")
+- [ ] **Pistes restantes** — vues dédiées pour WHOIS/scanner/crypto, tap-to-zoom sur un cluster
+      CCTV, animation des arcs cyberattaques, icône d'appli plus travaillée, cache local des
+      dernières données par couche (tout redémarre à vide aujourd'hui)
 
 ## Licence
 

@@ -31,8 +31,8 @@ class ReconViewModel(application: Application) : AndroidViewModel(application) {
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    private val _resultText = MutableStateFlow<String?>(null)
-    val resultText: StateFlow<String?> = _resultText.asStateFlow()
+    private val _result = MutableStateFlow<ReconResult?>(null)
+    val result: StateFlow<ReconResult?> = _result.asStateFlow()
 
     private val _errorText = MutableStateFlow<String?>(null)
     val errorText: StateFlow<String?> = _errorText.asStateFlow()
@@ -41,7 +41,7 @@ class ReconViewModel(application: Application) : AndroidViewModel(application) {
         _selectedTool.value = tool
         _inputValue.value = ""
         _secondaryValue.value = tool.secondaryParam?.default.orEmpty()
-        _resultText.value = null
+        _result.value = null
         _errorText.value = null
     }
 
@@ -68,9 +68,9 @@ class ReconViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _isLoading.value = true
             _errorText.value = null
-            _resultText.value = null
+            _result.value = null
             repository.query(baseUrl, tool, _inputValue.value, _secondaryValue.value.ifBlank { null })
-                .onSuccess { _resultText.value = it }
+                .onSuccess { _result.value = it }
                 .onFailure { _errorText.value = it.message ?: "Erreur réseau" }
             _isLoading.value = false
         }

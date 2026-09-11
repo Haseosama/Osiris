@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
@@ -63,6 +64,17 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _layerErrors = MutableStateFlow<Map<MapLayer, String?>>(emptyMap())
     val layerErrors: StateFlow<Map<MapLayer, String?>> = _layerErrors.asStateFlow()
+
+    /** True once every currently-enabled layer has failed at least once against a configured
+     * backend — distinct from "no backend configured", which already has its own banner. */
+    val backendUnreachable: StateFlow<Boolean> = combine(backendUrl, layerToggles, layerErrors) { url, toggles, errors ->
+        if (url.isBlank()) {
+            false
+        } else {
+            val enabledLayers = toggles.filterValues { it }.keys
+            enabledLayers.isNotEmpty() && enabledLayers.all { errors[it] != null }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     val flights = MutableStateFlow<List<FlightMarker>>(emptyList())
     val earthquakes = MutableStateFlow<List<Earthquake>>(emptyList())

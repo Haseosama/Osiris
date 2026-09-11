@@ -63,6 +63,7 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val backendUrl by viewModel.backendUrl.collectAsStateWithLifecycle()
+    val backendUnreachable by viewModel.backendUnreachable.collectAsStateWithLifecycle()
     val layerToggles by viewModel.layerToggles.collectAsStateWithLifecycle()
     val layerErrors by viewModel.layerErrors.collectAsStateWithLifecycle()
     val flights by viewModel.flights.collectAsStateWithLifecycle()
@@ -240,6 +241,19 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else if (backendUnreachable) {
+                Surface(
+                    onClick = onOpenSettings,
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    shape = MaterialTheme.shapes.small,
+                ) {
+                    Text(
+                        "Backend injoignable — vérifie qu'il est démarré et l'URL dans Réglages →",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
                     )
                 }
             }
