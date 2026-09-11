@@ -31,7 +31,7 @@ import org.maplibre.geojson.Point
 private val FLIGHT_COMMERCIAL = "#00E5FF".toColorInt()
 private val FLIGHT_PRIVATE = "#FFD54A".toColorInt()
 private val FLIGHT_JET = "#E040FB".toColorInt()
-private val FLIGHT_MILITARY = "#FF5252".toColorInt()
+private val FLIGHT_MILITARY = "#4CD97B".toColorInt()
 
 private val SEVERITY_LOW = "#4CD97B".toColorInt()
 private val SEVERITY_MEDIUM = "#FFB020".toColorInt()
