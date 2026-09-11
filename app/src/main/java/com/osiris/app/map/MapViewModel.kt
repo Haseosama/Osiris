@@ -5,14 +5,22 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.osiris.app.data.BackendPreferences
 import com.osiris.app.data.model.ConflictZone
+import com.osiris.app.data.model.CyberAttack
 import com.osiris.app.data.model.Earthquake
 import com.osiris.app.data.model.FireEvent
 import com.osiris.app.data.model.FlightMarker
+import com.osiris.app.data.model.LiveNewsFeed
+import com.osiris.app.data.model.MaritimeResponse
+import com.osiris.app.data.model.Satellite
 import com.osiris.app.data.model.WeatherEvent
 import com.osiris.app.data.repository.ConflictsRepository
+import com.osiris.app.data.repository.CyberAttacksRepository
 import com.osiris.app.data.repository.EarthquakesRepository
 import com.osiris.app.data.repository.FiresRepository
 import com.osiris.app.data.repository.FlightsRepository
+import com.osiris.app.data.repository.LiveNewsRepository
+import com.osiris.app.data.repository.MaritimeRepository
+import com.osiris.app.data.repository.SatellitesRepository
 import com.osiris.app.data.repository.WeatherRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -34,6 +42,10 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val firesRepo = FiresRepository()
     private val weatherRepo = WeatherRepository()
     private val conflictsRepo = ConflictsRepository()
+    private val maritimeRepo = MaritimeRepository()
+    private val satellitesRepo = SatellitesRepository()
+    private val liveNewsRepo = LiveNewsRepository()
+    private val cyberAttacksRepo = CyberAttacksRepository()
 
     val backendUrl: StateFlow<String> = backendPreferences.backendUrlFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, "")
@@ -51,6 +63,17 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     val fires = MutableStateFlow<List<FireEvent>>(emptyList())
     val weatherEvents = MutableStateFlow<List<WeatherEvent>>(emptyList())
     val conflictZones = MutableStateFlow<List<ConflictZone>>(emptyList())
+    val maritime = MutableStateFlow(MaritimeResponse())
+    val satellites = MutableStateFlow<List<Satellite>>(emptyList())
+    val newsFeeds = MutableStateFlow<List<LiveNewsFeed>>(emptyList())
+    val cyberAttacks = MutableStateFlow<List<CyberAttack>>(emptyList())
+
+    private val _selectedNewsFeed = MutableStateFlow<LiveNewsFeed?>(null)
+    val selectedNewsFeed: StateFlow<LiveNewsFeed?> = _selectedNewsFeed.asStateFlow()
+
+    fun selectNewsFeed(feed: LiveNewsFeed?) {
+        _selectedNewsFeed.value = feed
+    }
 
     private val pollingJobs = mutableMapOf<MapLayer, Job>()
 
@@ -92,6 +115,10 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             MapLayer.FIRES -> fires.value = firesRepo.fetch(baseUrl)
             MapLayer.WEATHER -> weatherEvents.value = weatherRepo.fetch(baseUrl)
             MapLayer.CONFLICTS -> conflictZones.value = conflictsRepo.fetch(baseUrl)
+            MapLayer.MARITIME -> maritime.value = maritimeRepo.fetch(baseUrl)
+            MapLayer.SATELLITES -> satellites.value = satellitesRepo.fetch(baseUrl)
+            MapLayer.NEWS -> newsFeeds.value = liveNewsRepo.fetch(baseUrl)
+            MapLayer.CYBER_ATTACKS -> cyberAttacks.value = cyberAttacksRepo.fetch(baseUrl)
         }
     }
 

@@ -52,9 +52,15 @@ Au premier lancement, ouvre **Réglages** et renseigne l'URL de ton backend (ex.
 
 - [x] **Phase 0** — socle (carte MapLibre, réglages backend, réseau)
 - [x] **Phase 1** — vols, séismes, incendies, météo sévère, zones de conflit
-- [ ] **Phase 2** — maritime, cyber/CVE, espace, actu (lecteur HLS)
-- [ ] **Phase 3** — CCTV (clustering), OSINT Telegram
-- [ ] **Phase 4** — panneau RECON (scanner ports, WHOIS/DNS, SSL, CVE, wallet crypto, OFAC)
+- [x] **Phase 2** — maritime (ports/chokepoints/AIS), satellites (SGP4 déjà calculé côté
+      backend), actu en direct (tap sur un dot → WebView si `embed_allowed`, sinon ouverture
+      externe — `/api/live-news` sert des flux YouTube, pas du HLS brut), cyberattaques
+      (lignes statiques source→cible ; pas encore d'animation comme sur le web)
+- [ ] **Phase 3** — CCTV (clustering), OSINT Telegram (`/api/news`, en fait le flux Telegram/RSS
+      géoparsé — pas un flux "actu" classique malgré son nom)
+- [ ] **Phase 4** — panneau RECON en liste (pas des pins carte) : scanner ports, WHOIS/DNS, SSL,
+      CVE (`/api/cyber-threats` — pas de lat/lng, ne peut pas être une couche carte), wallet
+      crypto, OFAC ; + espace (`/api/space-weather` — indice Kp global, pas géolocalisé)
 - [ ] **Phase 5** — polish (thème, cadence de polling, icône, offline)
 
 ## Licence

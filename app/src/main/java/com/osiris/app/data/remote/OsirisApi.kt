@@ -1,9 +1,13 @@
 package com.osiris.app.data.remote
 
 import com.osiris.app.data.model.ConflictsResponse
+import com.osiris.app.data.model.CyberAttacksResponse
 import com.osiris.app.data.model.EarthquakesResponse
 import com.osiris.app.data.model.FiresResponse
 import com.osiris.app.data.model.FlightsResponse
+import com.osiris.app.data.model.LiveNewsResponse
+import com.osiris.app.data.model.MaritimeResponse
+import com.osiris.app.data.model.SatellitesResponse
 import com.osiris.app.data.model.WeatherResponse
 import okhttp3.ResponseBody
 import retrofit2.Response
@@ -29,4 +33,16 @@ interface OsirisApi {
 
     @GET("api/conflicts")
     suspend fun conflicts(): ConflictsResponse
+
+    @GET("api/maritime")
+    suspend fun maritime(): MaritimeResponse
+
+    @GET("api/satellites")
+    suspend fun satellites(): SatellitesResponse
+
+    @GET("api/live-news")
+    suspend fun liveNews(): LiveNewsResponse
+
+    @GET("api/cyber-attacks")
+    suspend fun cyberAttacks(): CyberAttacksResponse
 }

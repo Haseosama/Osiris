@@ -3,7 +3,9 @@ package com.osiris.app.map
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -67,6 +69,11 @@ fun MapScreen(onOpenSettings: () -> Unit, viewModel: MapViewModel = viewModel())
     val fires by viewModel.fires.collectAsStateWithLifecycle()
     val weatherEvents by viewModel.weatherEvents.collectAsStateWithLifecycle()
     val conflictZones by viewModel.conflictZones.collectAsStateWithLifecycle()
+    val maritime by viewModel.maritime.collectAsStateWithLifecycle()
+    val satellites by viewModel.satellites.collectAsStateWithLifecycle()
+    val newsFeeds by viewModel.newsFeeds.collectAsStateWithLifecycle()
+    val cyberAttacks by viewModel.cyberAttacks.collectAsStateWithLifecycle()
+    val selectedNewsFeed by viewModel.selectedNewsFeed.collectAsStateWithLifecycle()
 
     val mapView = remember { MapView(context).apply { onCreate(null) } }
     var maplibreMap by remember { mutableStateOf<MapLibreMap?>(null) }
@@ -120,10 +127,38 @@ fun MapScreen(onOpenSettings: () -> Unit, viewModel: MapViewModel = viewModel())
     LaunchedEffect(layersController, fires) { layersController?.setFires(fires) }
     LaunchedEffect(layersController, weatherEvents) { layersController?.setWeatherEvents(weatherEvents) }
     LaunchedEffect(layersController, conflictZones) { layersController?.setConflictZones(conflictZones) }
+    LaunchedEffect(layersController, maritime) { layersController?.setMaritime(maritime) }
+    LaunchedEffect(layersController, satellites) { layersController?.setSatellites(satellites) }
+    LaunchedEffect(layersController, newsFeeds) { layersController?.setNewsFeeds(newsFeeds) }
+    LaunchedEffect(layersController, cyberAttacks) { layersController?.setCyberAttacks(cyberAttacks) }
     LaunchedEffect(layersController, layerToggles) {
         layersController?.let { controller ->
             layerToggles.forEach { (layer, enabled) -> controller.setLayerVisible(layer, enabled) }
         }
+    }
+
+    LaunchedEffect(maplibreMap) {
+        val map = maplibreMap ?: return@LaunchedEffect
+        map.addOnMapClickListener { latLng ->
+            val screenPoint = map.projection.toScreenLocation(latLng)
+            val feature = map.queryRenderedFeatures(screenPoint, "news-layer").firstOrNull()
+            val id = feature?.getStringProperty("id")
+            val tappedFeed = newsFeeds.firstOrNull { it.id == id }
+            if (tappedFeed != null) {
+                if (tappedFeed.embedAllowed) {
+                    viewModel.selectNewsFeed(tappedFeed)
+                } else {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(tappedFeed.url)))
+                }
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    selectedNewsFeed?.let { feed ->
+        NewsPlayerDialog(feed = feed, onDismiss = { viewModel.selectNewsFeed(null) })
     }
 
     Box(modifier = Modifier.fillMaxSize()) {

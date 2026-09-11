@@ -10,4 +10,8 @@ enum class MapLayer(val label: String, val pollIntervalMs: Long, val defaultEnab
     FIRES("Incendies", 10 * 60_000L, defaultEnabled = false),
     WEATHER("Météo sévère", 10 * 60_000L, defaultEnabled = false),
     CONFLICTS("Zones de conflit", 15 * 60_000L, defaultEnabled = false),
+    MARITIME("Maritime", 20_000L, defaultEnabled = false),
+    NEWS("Actu en direct", 30 * 60_000L, defaultEnabled = true),
+    SATELLITES("Satellites", 60_000L, defaultEnabled = false),
+    CYBER_ATTACKS("Cyberattaques", 15_000L, defaultEnabled = false),
 }

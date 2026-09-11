@@ -1,12 +1,17 @@
 package com.osiris.app.map
 
 import com.osiris.app.data.model.ConflictZone
+import com.osiris.app.data.model.CyberAttack
 import com.osiris.app.data.model.Earthquake
 import com.osiris.app.data.model.FireEvent
 import com.osiris.app.data.model.FlightMarker
+import com.osiris.app.data.model.LiveNewsFeed
+import com.osiris.app.data.model.MaritimeResponse
+import com.osiris.app.data.model.Satellite
 import com.osiris.app.data.model.WeatherEvent
 import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.CircleLayer
+import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
 import org.maplibre.android.style.layers.PropertyValue
@@ -14,6 +19,7 @@ import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.android.maps.Style
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
+import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 
 private val FLIGHT_COMMERCIAL = "#00E5FF".toColorInt()
@@ -27,6 +33,20 @@ private val SEVERITY_HIGH = "#FF5252".toColorInt()
 private val SEVERITY_WAR = "#B00020".toColorInt()
 
 private val FIRE_COLOR = "#FF7A1A".toColorInt()
+
+private val PORT_CONTAINER = "#00E5FF".toColorInt()
+private val PORT_ENERGY = "#FFB020".toColorInt()
+private val PORT_NAVAL = "#FF5252".toColorInt()
+private val SHIP_COLOR = "#8AE6C8".toColorInt()
+
+private val SAT_COMMS = "#00E676".toColorInt()
+private val SAT_NAVIGATION = "#448AFF".toColorInt()
+private val SAT_EARTH_OBS = "#90EE90".toColorInt()
+private val SAT_MILITARY = "#FF3D3D".toColorInt()
+private val SAT_SCIENCE = "#FFD700".toColorInt()
+private val SAT_OTHER = "#00E5FF".toColorInt()
+
+private val NEWS_COLOR = "#00E5FF".toColorInt()
 
 /**
  * Adds/updates one GeoJSON source + circle layer per [MapLayer] on the given MapLibre [style].
@@ -147,17 +167,162 @@ class LayersController(private val style: Style) {
         )
     }
 
-    fun setLayerVisible(layer: MapLayer, visible: Boolean) {
-        val layerId = when (layer) {
-            MapLayer.FLIGHTS -> "flights-layer"
-            MapLayer.EARTHQUAKES -> "earthquakes-layer"
-            MapLayer.FIRES -> "fires-layer"
-            MapLayer.WEATHER -> "weather-layer"
-            MapLayer.CONFLICTS -> "conflicts-layer"
+    fun setMaritime(maritime: MaritimeResponse) {
+        val portFeatures = maritime.ports.map { port ->
+            feature(port.lng, port.lat) {
+                addStringProperty("name", port.name)
+                addStringProperty("type", port.type)
+            }
         }
-        style.getLayer(layerId)?.setProperties(
-            PropertyFactory.visibility(if (visible) Property.VISIBLE else Property.NONE)
+        updateSource("ports-source", portFeatures)
+        ensureCircleLayer(
+            layerId = "ports-layer",
+            sourceId = "ports-source",
+            color = PropertyFactory.circleColor(
+                Expression.match(
+                    Expression.get("type"),
+                    Expression.color(PORT_CONTAINER),
+                    Expression.stop("container", Expression.color(PORT_CONTAINER)),
+                    Expression.stop("energy", Expression.color(PORT_ENERGY)),
+                    Expression.stop("naval", Expression.color(PORT_NAVAL)),
+                )
+            ),
+            radius = PropertyFactory.circleRadius(5f),
         )
+
+        val chokepointFeatures = maritime.chokepoints.map { choke ->
+            feature(choke.lng, choke.lat) {
+                addStringProperty("name", choke.name)
+                addStringProperty("risk", choke.risk)
+            }
+        }
+        updateSource("chokepoints-source", chokepointFeatures)
+        ensureCircleLayer(
+            layerId = "chokepoints-layer",
+            sourceId = "chokepoints-source",
+            color = PropertyFactory.circleColor(
+                Expression.match(
+                    Expression.get("risk"),
+                    Expression.color(SEVERITY_MEDIUM),
+                    Expression.stop("LOW", Expression.color(SEVERITY_LOW)),
+                    Expression.stop("MODERATE", Expression.color(SEVERITY_MEDIUM)),
+                    Expression.stop("ELEVATED", Expression.color(SEVERITY_MEDIUM)),
+                    Expression.stop("HIGH", Expression.color(SEVERITY_HIGH)),
+                    Expression.stop("CRITICAL", Expression.color(SEVERITY_WAR)),
+                )
+            ),
+            radius = PropertyFactory.circleRadius(9f),
+        )
+
+        val shipFeatures = maritime.ships.map { ship ->
+            feature(ship.lng, ship.lat) {
+                ship.name?.let { addStringProperty("name", it) }
+                ship.type?.let { addStringProperty("type", it) }
+            }
+        }
+        updateSource("ships-source", shipFeatures)
+        ensureCircleLayer(
+            layerId = "ships-layer",
+            sourceId = "ships-source",
+            color = PropertyFactory.circleColor(SHIP_COLOR),
+            radius = PropertyFactory.circleRadius(2.5f),
+        )
+    }
+
+    fun setSatellites(satellites: List<Satellite>) {
+        val features = satellites.map { sat ->
+            feature(sat.lng, sat.lat) {
+                addStringProperty("name", sat.name)
+                addStringProperty("category", sat.category ?: "other")
+                sat.mission?.let { addStringProperty("mission", it) }
+            }
+        }
+        updateSource("satellites-source", features)
+        ensureCircleLayer(
+            layerId = "satellites-layer",
+            sourceId = "satellites-source",
+            color = PropertyFactory.circleColor(
+                Expression.match(
+                    Expression.get("category"),
+                    Expression.color(SAT_OTHER),
+                    Expression.stop("comms", Expression.color(SAT_COMMS)),
+                    Expression.stop("navigation", Expression.color(SAT_NAVIGATION)),
+                    Expression.stop("earth_obs", Expression.color(SAT_EARTH_OBS)),
+                    Expression.stop("military", Expression.color(SAT_MILITARY)),
+                    Expression.stop("science", Expression.color(SAT_SCIENCE)),
+                    Expression.stop("other", Expression.color(SAT_OTHER)),
+                )
+            ),
+            radius = PropertyFactory.circleRadius(2f),
+        )
+    }
+
+    fun setNewsFeeds(feeds: List<LiveNewsFeed>) {
+        val features = feeds.map { feed ->
+            feature(feed.lng, feed.lat) {
+                addStringProperty("id", feed.id)
+                addStringProperty("name", feed.name)
+                addStringProperty("url", feed.url)
+                addBooleanProperty("embedAllowed", feed.embedAllowed)
+            }
+        }
+        updateSource("news-source", features)
+        ensureCircleLayer(
+            layerId = "news-layer",
+            sourceId = "news-source",
+            color = PropertyFactory.circleColor(NEWS_COLOR),
+            radius = PropertyFactory.circleRadius(7f),
+        )
+    }
+
+    fun setCyberAttacks(attacks: List<CyberAttack>) {
+        val features = attacks.map { attack ->
+            val line = LineString.fromLngLats(
+                listOf(
+                    Point.fromLngLat(attack.srcLng, attack.srcLat),
+                    Point.fromLngLat(attack.dstLng, attack.dstLat),
+                )
+            )
+            Feature.fromGeometry(line).apply {
+                addNumberProperty("severity", attack.severity)
+                attack.malware?.let { addStringProperty("malware", it) }
+            }
+        }
+        updateSource("cyber-attacks-source", features)
+        if (style.getLayer("cyber-attacks-layer") == null) {
+            val layer = LineLayer("cyber-attacks-layer", "cyber-attacks-source").withProperties(
+                PropertyFactory.lineColor(
+                    Expression.interpolate(
+                        Expression.linear(),
+                        Expression.get("severity"),
+                        Expression.stop(5f, Expression.color(SEVERITY_MEDIUM)),
+                        Expression.stop(10f, Expression.color(SEVERITY_WAR)),
+                    )
+                ),
+                PropertyFactory.lineWidth(1.5f),
+                PropertyFactory.lineOpacity(0.7f),
+            )
+            style.addLayer(layer)
+        }
+    }
+
+    private val layerIdsByMapLayer: Map<MapLayer, List<String>> = mapOf(
+        MapLayer.FLIGHTS to listOf("flights-layer"),
+        MapLayer.EARTHQUAKES to listOf("earthquakes-layer"),
+        MapLayer.FIRES to listOf("fires-layer"),
+        MapLayer.WEATHER to listOf("weather-layer"),
+        MapLayer.CONFLICTS to listOf("conflicts-layer"),
+        MapLayer.MARITIME to listOf("ports-layer", "chokepoints-layer", "ships-layer"),
+        MapLayer.SATELLITES to listOf("satellites-layer"),
+        MapLayer.NEWS to listOf("news-layer"),
+        MapLayer.CYBER_ATTACKS to listOf("cyber-attacks-layer"),
+    )
+
+    fun setLayerVisible(layer: MapLayer, visible: Boolean) {
+        val visibility = PropertyFactory.visibility(if (visible) Property.VISIBLE else Property.NONE)
+        layerIdsByMapLayer[layer]?.forEach { layerId ->
+            style.getLayer(layerId)?.setProperties(visibility)
+        }
     }
 
     private fun updateSource(sourceId: String, features: List<Feature>) {
