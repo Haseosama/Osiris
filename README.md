@@ -95,9 +95,21 @@ Au premier lancement, ouvre **Réglages** et renseigne l'URL de ton backend (ex.
       que le premier polling démarre (pour ne pas se faire écraser par une lecture disque plus
       lente qu'une réponse réseau) : la carte affiche les dernières données connues
       immédiatement plutôt que de repartir à vide à chaque ouverture de l'appli
-- [ ] **Pistes restantes** — vues dédiées pour WHOIS/scanner/crypto, tap-to-zoom sur un cluster
-      CCTV, animation des arcs cyberattaques, icône d'appli plus travaillée, purge du cache
-      au-delà d'un certain âge (aujourd'hui il n'expire jamais)
+- [x] **Polish 2** :
+      - Vues dédiées WHOIS et wallet crypto (WhoisResult/CryptoWalletResult typés, schémas
+        confirmés depuis les sources `route.ts`/`chainIntel.ts` du repo Osiris) ; le scanner et
+        les certificats SSL passent maintenant par `JsonTreeView`, un arbre JSON indenté
+        générique plutôt qu'un bloc monospace plat — pas de DTO dédié (le scanner proxie un
+        microservice externe dont le schéma varie par `type` de scan et n'est pas dans ce repo)
+      - Tap-to-zoom sur un cluster CCTV : `GeoJsonSource.getClusterExpansionZoom()` + anime la
+        caméra vers ce niveau de zoom
+      - Arcs de cyberattaques animés : `ArcMath` calcule une courbe de Bézier quadratique
+        (bulge perpendiculaire) partagée entre la ligne statique (LayersController) et un point
+        qui voyage dessus, repositionné toutes les ~80ms par une coroutine dans MapViewModel
+        tant que la couche est active (annulée à la désactivation)
+      - Icône d'appli retravaillée (double anneau radar + points de contact colorés)
+      - `LayerCache` purge maintenant les fichiers de plus de 24h au lieu de les servir
+        indéfiniment (basé sur `File.lastModified()`, pas d'horodatage dans le JSON)
 
 ## Licence
 

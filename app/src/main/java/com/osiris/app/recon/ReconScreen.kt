@@ -125,18 +125,10 @@ private fun ReconResultView(result: ReconResult, modifier: Modifier = Modifier) 
         is ReconResult.Dns -> DnsResultView(result.data, modifier)
         is ReconResult.IpIntel -> IpIntelResultView(result.data, modifier)
         is ReconResult.Sanctions -> SanctionsResultView(result.data, modifier)
-        is ReconResult.Raw -> RawResultView(result.json, modifier)
+        is ReconResult.Whois -> WhoisResultView(result.data, modifier)
+        is ReconResult.CryptoWallet -> CryptoWalletResultView(result.data, modifier)
+        is ReconResult.Raw -> JsonTreeView(result.json, modifier)
     }
-}
-
-@Composable
-private fun RawResultView(json: String, modifier: Modifier = Modifier) {
-    Text(
-        json,
-        modifier = modifier.verticalScroll(rememberScrollState()),
-        fontFamily = FontFamily.Monospace,
-        style = MaterialTheme.typography.bodySmall,
-    )
 }
 
 @Composable
@@ -254,6 +246,116 @@ private fun SanctionEntryRow(entry: SanctionEntry) {
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+@Composable
+private fun WhoisResultView(data: WhoisResult, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (data.error != null) {
+            Text(data.error, color = MaterialTheme.colorScheme.error)
+        } else {
+            Text(data.domain ?: "", style = MaterialTheme.typography.titleMedium)
+            LabeledLine("Enregistré le", data.registration.orEmpty())
+            LabeledLine("Expire le", data.expiration.orEmpty())
+            LabeledLine("Dernière modif.", data.lastChanged.orEmpty())
+
+            data.rdap?.let { rdap ->
+                if (rdap.nameservers.isNotEmpty()) LabeledLine("Nameservers", rdap.nameservers.joinToString())
+                val orgsAndNames = rdap.entities.mapNotNull { it.org ?: it.name }
+                if (orgsAndNames.isNotEmpty()) LabeledLine("Registrant / Org", orgsAndNames.joinToString())
+            }
+
+            data.securityScore?.let { score ->
+                Text(
+                    "Sécurité HTTP : ${score.grade ?: "?"} (${score.score}/${score.max})",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = severityColor(
+                        when (score.grade?.uppercase()) {
+                            "A" -> "LOW"
+                            "B" -> "MEDIUM"
+                            else -> "HIGH"
+                        }
+                    ),
+                )
+            }
+            data.http?.let { http ->
+                LabeledLine("HTTP", listOfNotNull(http.status?.toString(), http.finalUrl).joinToString(" → "))
+            }
+
+            data.sanctionsMatch?.hits?.forEach { hit ->
+                SectionTitle("⚠ Sanctions — ${hit.matchedValue}")
+                hit.entries.forEach { entry -> SanctionEntryRow(entry) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CryptoWalletResultView(data: CryptoWalletResult, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (data.error != null) {
+            Text(data.error, color = MaterialTheme.colorScheme.error)
+        } else {
+            Text(data.address ?: "", style = MaterialTheme.typography.titleMedium, fontFamily = FontFamily.Monospace)
+            Text(data.chainLabel ?: data.chain ?: "", style = MaterialTheme.typography.labelMedium)
+
+            data.balance?.let { balance ->
+                LabeledLine(
+                    "Solde",
+                    "${balance.native} ${data.symbol ?: ""}".trim() + (balance.usd?.let { " (~$it USD)" } ?: ""),
+                )
+            }
+            data.activity?.let { activity ->
+                LabeledLine("Transactions", activity.txCount.toString())
+                LabeledLine("Première / dernière", listOfNotNull(activity.firstSeen, activity.lastSeen).joinToString(" → "))
+            }
+            data.flow?.let { flow ->
+                LabeledLine("Flux", "reçu ${flow.totalIn} / envoyé ${flow.totalOut} (net ${flow.net})")
+            }
+
+            data.risk?.let { risk ->
+                Text(
+                    "Risque : ${risk.level ?: "?"} (${risk.score}/100)",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = severityColor(risk.level),
+                )
+                risk.factors.forEach { factor ->
+                    Text(
+                        "• ${factor.label ?: factor.code ?: "?"} — ${factor.detail ?: ""}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = severityColor(factor.severity),
+                    )
+                }
+            }
+
+            if (data.sanctions?.hit == true) {
+                SectionTitle("⚠ Sanctions OFAC")
+                data.sanctions.entries.forEach { entry -> SanctionEntryRow(entry) }
+            }
+
+            if (data.counterparties.isNotEmpty()) {
+                SectionTitle("Contreparties")
+                data.counterparties.take(10).forEach { cp ->
+                    Text(
+                        "${cp.address} (${cp.direction}, ${cp.txs} tx, ${cp.value})",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
+            }
+
+            if (data.transactions.isNotEmpty()) {
+                SectionTitle("Transactions récentes")
+                data.transactions.take(10).forEach { tx ->
+                    Text(
+                        "${tx.hash.take(16)}…  ${tx.direction}  ${tx.value}",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
+            }
+        }
     }
 }
 

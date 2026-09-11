@@ -89,6 +89,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     val cyberAttacks = MutableStateFlow<List<CyberAttack>>(emptyList())
     val cctvCameras = MutableStateFlow<List<CctvCamera>>(emptyList())
     val osintPosts = MutableStateFlow<List<OsintPost>>(emptyList())
+    val cyberAttackPulses = MutableStateFlow<List<CyberAttackPulse>>(emptyList())
 
     private val _selectedNewsFeed = MutableStateFlow<LiveNewsFeed?>(null)
     val selectedNewsFeed: StateFlow<LiveNewsFeed?> = _selectedNewsFeed.asStateFlow()
@@ -112,11 +113,17 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private val pollingJobs = mutableMapOf<MapLayer, Job>()
+    private var pulseJob: Job? = null
 
     init {
         viewModelScope.launch {
             loadCachedData()
-            _layerToggles.value.forEach { (layer, enabled) -> if (enabled) startPolling(layer) }
+            _layerToggles.value.forEach { (layer, enabled) ->
+                if (enabled) {
+                    startPolling(layer)
+                    if (layer == MapLayer.CYBER_ATTACKS) startCyberAttackPulseAnimation()
+                }
+            }
         }
     }
 
@@ -141,8 +148,33 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         _layerToggles.update { it + (layer to nowEnabled) }
         if (nowEnabled) {
             startPolling(layer)
+            if (layer == MapLayer.CYBER_ATTACKS) startCyberAttackPulseAnimation()
         } else {
             pollingJobs.remove(layer)?.cancel()
+            if (layer == MapLayer.CYBER_ATTACKS) {
+                pulseJob?.cancel()
+                pulseJob = null
+                cyberAttackPulses.value = emptyList()
+            }
+        }
+    }
+
+    /** Recomputes each attack's dot position along its [ArcMath] curve every ~80ms while the
+     * layer is enabled — cancelled the moment it's toggled off so a hidden layer costs nothing. */
+    private fun startCyberAttackPulseAnimation() {
+        pulseJob?.cancel()
+        pulseJob = viewModelScope.launch {
+            var t = 0.0
+            while (isActive) {
+                val attacks = cyberAttacks.value
+                cyberAttackPulses.value = attacks.map { attack ->
+                    val phase = (t + (attack.id.hashCode().mod(100)) / 100.0) % 1.0
+                    val (lng, lat) = ArcMath.pointAt(attack.srcLng, attack.srcLat, attack.dstLng, attack.dstLat, phase)
+                    CyberAttackPulse(attack.id, lng, lat, attack.severity)
+                }
+                t = (t + 0.015) % 1.0
+                delay(80L)
+            }
         }
     }
 

@@ -4,9 +4,9 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 // Typed response shapes for the RECON tools worth a dedicated view (see ReconResult).
-// Every other tool (scanner, WHOIS, SSL certs, crypto wallet, space weather) falls back to
-// pretty-printed raw JSON — their schemas are either too deeply nested or too unstable to be
-// worth locking into DTOs for a first pass.
+// Scanner, SSL certs and space weather still fall back to a generic indented JSON tree
+// (JsonTreeView in ReconScreen.kt) rather than a DTO — the scanner in particular proxies to an
+// external microservice whose response shape varies per scan `type` and isn't in this repo.
 
 @Serializable
 data class CveResult(
@@ -117,11 +117,131 @@ data class SanctionsResult(
     val error: String? = null,
 )
 
-/** What [ReconScreen] renders — a typed view for the tools above, raw JSON for everything else. */
+@Serializable
+data class WhoisResult(
+    val domain: String? = null,
+    val rdap: WhoisRdap? = null,
+    val registration: String? = null,
+    val expiration: String? = null,
+    @SerialName("last_changed") val lastChanged: String? = null,
+    val http: WhoisHttp? = null,
+    @SerialName("security_score") val securityScore: SecurityScore? = null,
+    @SerialName("sanctions_match") val sanctionsMatch: SanctionsMatchBlock? = null,
+    val error: String? = null,
+)
+
+@Serializable
+data class WhoisRdap(
+    val handle: String? = null,
+    val name: String? = null,
+    val status: List<String> = emptyList(),
+    val nameservers: List<String> = emptyList(),
+    val entities: List<WhoisEntity> = emptyList(),
+)
+
+@Serializable
+data class WhoisEntity(
+    val handle: String? = null,
+    val roles: List<String> = emptyList(),
+    val name: String? = null,
+    val org: String? = null,
+)
+
+@Serializable
+data class WhoisHttp(
+    val status: Int? = null,
+    val headers: Map<String, String> = emptyMap(),
+    val redirected: Boolean = false,
+    @SerialName("final_url") val finalUrl: String? = null,
+)
+
+@Serializable
+data class SecurityScore(val score: Int = 0, val max: Int = 7, val grade: String? = null)
+
+@Serializable
+data class CryptoWalletResult(
+    val address: String? = null,
+    val chain: String? = null,
+    @SerialName("chain_label") val chainLabel: String? = null,
+    val symbol: String? = null,
+    val balance: WalletBalance? = null,
+    val activity: WalletActivity? = null,
+    val flow: WalletFlow? = null,
+    val counterparties: List<Counterparty> = emptyList(),
+    val transactions: List<TxSummary> = emptyList(),
+    val sanctions: WalletSanctions? = null,
+    val risk: WalletRisk? = null,
+    val labels: List<String> = emptyList(),
+    val error: String? = null,
+)
+
+@Serializable
+data class WalletBalance(val native: Double = 0.0, val usd: Double? = null)
+
+@Serializable
+data class WalletActivity(
+    @SerialName("tx_count") val txCount: Int = 0,
+    @SerialName("first_seen") val firstSeen: String? = null,
+    @SerialName("last_seen") val lastSeen: String? = null,
+    @SerialName("age_days") val ageDays: Int? = null,
+    @SerialName("history_complete") val historyComplete: Boolean = false,
+)
+
+@Serializable
+data class WalletFlow(
+    @SerialName("total_in") val totalIn: Double = 0.0,
+    @SerialName("total_out") val totalOut: Double = 0.0,
+    val net: Double = 0.0,
+)
+
+@Serializable
+data class Counterparty(
+    val address: String,
+    val direction: String,
+    val txs: Int = 0,
+    val value: Double = 0.0,
+)
+
+@Serializable
+data class TxSummary(
+    val hash: String,
+    val time: String? = null,
+    val direction: String,
+    val value: Double = 0.0,
+    val counterparty: String? = null,
+)
+
+@Serializable
+data class WalletSanctions(
+    val screened: Boolean = false,
+    val hit: Boolean = false,
+    val entries: List<SanctionEntry> = emptyList(),
+)
+
+@Serializable
+data class WalletRisk(
+    val score: Int = 0,
+    val level: String? = null,
+    val factors: List<RiskFactor> = emptyList(),
+)
+
+@Serializable
+data class RiskFactor(
+    val code: String? = null,
+    val label: String? = null,
+    val severity: String? = null,
+    val weight: Int = 0,
+    val detail: String? = null,
+)
+
+/** What [ReconScreen] renders — a typed view for the tools above, an indented JSON tree for
+ * everything else (still structured, just not locked into a DTO). */
 sealed interface ReconResult {
     data class Cve(val data: CveResult) : ReconResult
     data class Dns(val data: DnsResult) : ReconResult
     data class IpIntel(val data: IpIntelResult) : ReconResult
     data class Sanctions(val data: SanctionsResult) : ReconResult
+    data class Whois(val data: WhoisResult) : ReconResult
+    data class CryptoWallet(val data: CryptoWalletResult) : ReconResult
     data class Raw(val json: String) : ReconResult
 }

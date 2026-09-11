@@ -51,6 +51,8 @@ class ReconRepository {
         ReconTool.DNS -> decodeOrRaw(body) { ReconResult.Dns(json.decodeFromString(body)) }
         ReconTool.IP_INTEL -> decodeOrRaw(body) { ReconResult.IpIntel(json.decodeFromString(body)) }
         ReconTool.SANCTIONS -> decodeOrRaw(body) { ReconResult.Sanctions(json.decodeFromString(body)) }
+        ReconTool.WHOIS -> decodeOrRaw(body) { ReconResult.Whois(json.decodeFromString(body)) }
+        ReconTool.CRYPTO_WALLET -> decodeOrRaw(body) { ReconResult.CryptoWallet(json.decodeFromString(body)) }
         else -> ReconResult.Raw(prettyPrint(body))
     }
 

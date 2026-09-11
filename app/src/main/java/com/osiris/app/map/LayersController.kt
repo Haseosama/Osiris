@@ -283,12 +283,11 @@ class LayersController(private val style: Style) {
 
     fun setCyberAttacks(attacks: List<CyberAttack>) {
         val features = attacks.map { attack ->
-            val line = LineString.fromLngLats(
-                listOf(
-                    Point.fromLngLat(attack.srcLng, attack.srcLat),
-                    Point.fromLngLat(attack.dstLng, attack.dstLat),
-                )
-            )
+            // A curved arc, not a straight line — see ArcMath — echoing the flying arcs the
+            // web app animates for these. The MapViewModel-driven pulse layer below travels
+            // along this exact same curve.
+            val curve = ArcMath.curve(attack.srcLng, attack.srcLat, attack.dstLng, attack.dstLat)
+            val line = LineString.fromLngLats(curve.map { (lng, lat) -> Point.fromLngLat(lng, lat) })
             Feature.fromGeometry(line).apply {
                 addNumberProperty("severity", attack.severity)
                 attack.malware?.let { addStringProperty("malware", it) }
@@ -306,10 +305,34 @@ class LayersController(private val style: Style) {
                     )
                 ),
                 PropertyFactory.lineWidth(1.5f),
-                PropertyFactory.lineOpacity(0.7f),
+                PropertyFactory.lineOpacity(0.5f),
             )
             style.addLayer(layer)
         }
+    }
+
+    /** A small moving dot per attack, position recomputed by MapViewModel every ~80ms along
+     * the same [ArcMath] curve [setCyberAttacks] draws — the "flying" part of the flying arc. */
+    fun setCyberAttackPulses(pulses: List<CyberAttackPulse>) {
+        val features = pulses.map { pulse ->
+            feature(pulse.lng, pulse.lat) {
+                addNumberProperty("severity", pulse.severity)
+            }
+        }
+        updateSource("cyber-attacks-pulse-source", features)
+        ensureCircleLayer(
+            layerId = "cyber-attacks-pulse-layer",
+            sourceId = "cyber-attacks-pulse-source",
+            color = PropertyFactory.circleColor(
+                Expression.interpolate(
+                    Expression.linear(),
+                    Expression.get("severity"),
+                    Expression.stop(5f, Expression.color(SEVERITY_MEDIUM)),
+                    Expression.stop(10f, Expression.color(SEVERITY_WAR)),
+                )
+            ),
+            radius = PropertyFactory.circleRadius(3.5f),
+        )
     }
 
     /**
@@ -377,6 +400,13 @@ class LayersController(private val style: Style) {
         }
     }
 
+    /** Zoom level at which tapping this CCTV cluster feature would split it apart, or null if
+     * the source isn't ready yet or the feature isn't actually a cluster. */
+    fun cctvClusterExpansionZoom(feature: Feature): Int? {
+        val source = style.getSource("cctv-source") as? GeoJsonSource ?: return null
+        return runCatching { source.getClusterExpansionZoom(feature) }.getOrNull()
+    }
+
     fun setOsintPosts(posts: List<OsintPost>) {
         val features = posts.mapNotNull { post ->
             val lat = post.lat ?: return@mapNotNull null
@@ -413,7 +443,7 @@ class LayersController(private val style: Style) {
         MapLayer.MARITIME to listOf("ports-layer", "chokepoints-layer", "ships-layer"),
         MapLayer.SATELLITES to listOf("satellites-layer"),
         MapLayer.NEWS to listOf("news-layer"),
-        MapLayer.CYBER_ATTACKS to listOf("cyber-attacks-layer"),
+        MapLayer.CYBER_ATTACKS to listOf("cyber-attacks-layer", "cyber-attacks-pulse-layer"),
         MapLayer.CCTV to listOf("cctv-clusters", "cctv-cluster-count", "cctv-unclustered"),
         MapLayer.OSINT to listOf("osint-layer"),
     )

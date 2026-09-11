@@ -19,6 +19,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.serializer
 import java.io.File
 
+private const val MAX_CACHE_AGE_MS = 24 * 60 * 60 * 1000L
+
 /**
  * Persists the last successfully fetched payload per layer to a private file, so the map
  * shows the previous session's data immediately on launch instead of starting empty while
@@ -82,7 +84,16 @@ class LayerCache(context: Context) {
         val serializer = serializer<T>()
         withContext(Dispatchers.IO) {
             val file = fileFor(layer)
-            if (!file.exists()) null else json.decodeFromString(serializer, file.readText())
+            when {
+                !file.exists() -> null
+                System.currentTimeMillis() - file.lastModified() > MAX_CACHE_AGE_MS -> {
+                    // Stale beyond usefulness (backend URL likely changed, or the app just
+                    // hasn't been opened in a while) — delete rather than keep serving it.
+                    file.delete()
+                    null
+                }
+                else -> json.decodeFromString(serializer, file.readText())
+            }
         }
     }.getOrNull()
 

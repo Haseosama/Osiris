@@ -75,6 +75,7 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
     val satellites by viewModel.satellites.collectAsStateWithLifecycle()
     val newsFeeds by viewModel.newsFeeds.collectAsStateWithLifecycle()
     val cyberAttacks by viewModel.cyberAttacks.collectAsStateWithLifecycle()
+    val cyberAttackPulses by viewModel.cyberAttackPulses.collectAsStateWithLifecycle()
     val cctvCameras by viewModel.cctvCameras.collectAsStateWithLifecycle()
     val osintPosts by viewModel.osintPosts.collectAsStateWithLifecycle()
     val selectedNewsFeed by viewModel.selectedNewsFeed.collectAsStateWithLifecycle()
@@ -137,6 +138,7 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
     LaunchedEffect(layersController, satellites) { layersController?.setSatellites(satellites) }
     LaunchedEffect(layersController, newsFeeds) { layersController?.setNewsFeeds(newsFeeds) }
     LaunchedEffect(layersController, cyberAttacks) { layersController?.setCyberAttacks(cyberAttacks) }
+    LaunchedEffect(layersController, cyberAttackPulses) { layersController?.setCyberAttackPulses(cyberAttackPulses) }
     LaunchedEffect(layersController, cctvCameras) { layersController?.setCctv(cctvCameras) }
     LaunchedEffect(layersController, osintPosts) { layersController?.setOsintPosts(osintPosts) }
     LaunchedEffect(layersController, layerToggles) {
@@ -158,6 +160,15 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
                     viewModel.selectNewsFeed(tappedFeed)
                 } else {
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(tappedFeed.url)))
+                }
+                return@addOnMapClickListener true
+            }
+
+            val clusterFeature = map.queryRenderedFeatures(screenPoint, "cctv-clusters").firstOrNull()
+            if (clusterFeature != null) {
+                val expansionZoom = layersController?.cctvClusterExpansionZoom(clusterFeature)
+                if (expansionZoom != null) {
+                    map.easeCamera(CameraUpdateFactory.newLatLngZoom(latLng, expansionZoom.toDouble()))
                 }
                 return@addOnMapClickListener true
             }
