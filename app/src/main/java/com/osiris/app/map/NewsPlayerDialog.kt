@@ -19,7 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.foundation.layout.weight
 import androidx.compose.material3.MaterialTheme
 import com.osiris.app.data.model.LiveNewsFeed
 
