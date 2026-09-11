@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.osiris.app.data.BackendPreferences
+import com.osiris.app.data.model.CctvCamera
 import com.osiris.app.data.model.ConflictZone
 import com.osiris.app.data.model.CyberAttack
 import com.osiris.app.data.model.Earthquake
@@ -11,8 +12,10 @@ import com.osiris.app.data.model.FireEvent
 import com.osiris.app.data.model.FlightMarker
 import com.osiris.app.data.model.LiveNewsFeed
 import com.osiris.app.data.model.MaritimeResponse
+import com.osiris.app.data.model.OsintPost
 import com.osiris.app.data.model.Satellite
 import com.osiris.app.data.model.WeatherEvent
+import com.osiris.app.data.repository.CctvRepository
 import com.osiris.app.data.repository.ConflictsRepository
 import com.osiris.app.data.repository.CyberAttacksRepository
 import com.osiris.app.data.repository.EarthquakesRepository
@@ -20,6 +23,7 @@ import com.osiris.app.data.repository.FiresRepository
 import com.osiris.app.data.repository.FlightsRepository
 import com.osiris.app.data.repository.LiveNewsRepository
 import com.osiris.app.data.repository.MaritimeRepository
+import com.osiris.app.data.repository.OsintRepository
 import com.osiris.app.data.repository.SatellitesRepository
 import com.osiris.app.data.repository.WeatherRepository
 import kotlinx.coroutines.Job
@@ -46,6 +50,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val satellitesRepo = SatellitesRepository()
     private val liveNewsRepo = LiveNewsRepository()
     private val cyberAttacksRepo = CyberAttacksRepository()
+    private val cctvRepo = CctvRepository()
+    private val osintRepo = OsintRepository()
 
     val backendUrl: StateFlow<String> = backendPreferences.backendUrlFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, "")
@@ -67,12 +73,28 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     val satellites = MutableStateFlow<List<Satellite>>(emptyList())
     val newsFeeds = MutableStateFlow<List<LiveNewsFeed>>(emptyList())
     val cyberAttacks = MutableStateFlow<List<CyberAttack>>(emptyList())
+    val cctvCameras = MutableStateFlow<List<CctvCamera>>(emptyList())
+    val osintPosts = MutableStateFlow<List<OsintPost>>(emptyList())
 
     private val _selectedNewsFeed = MutableStateFlow<LiveNewsFeed?>(null)
     val selectedNewsFeed: StateFlow<LiveNewsFeed?> = _selectedNewsFeed.asStateFlow()
 
     fun selectNewsFeed(feed: LiveNewsFeed?) {
         _selectedNewsFeed.value = feed
+    }
+
+    private val _selectedCctvCamera = MutableStateFlow<CctvCamera?>(null)
+    val selectedCctvCamera: StateFlow<CctvCamera?> = _selectedCctvCamera.asStateFlow()
+
+    fun selectCctvCamera(camera: CctvCamera?) {
+        _selectedCctvCamera.value = camera
+    }
+
+    private val _selectedOsintPost = MutableStateFlow<OsintPost?>(null)
+    val selectedOsintPost: StateFlow<OsintPost?> = _selectedOsintPost.asStateFlow()
+
+    fun selectOsintPost(post: OsintPost?) {
+        _selectedOsintPost.value = post
     }
 
     private val pollingJobs = mutableMapOf<MapLayer, Job>()
@@ -119,6 +141,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             MapLayer.SATELLITES -> satellites.value = satellitesRepo.fetch(baseUrl)
             MapLayer.NEWS -> newsFeeds.value = liveNewsRepo.fetch(baseUrl)
             MapLayer.CYBER_ATTACKS -> cyberAttacks.value = cyberAttacksRepo.fetch(baseUrl)
+            MapLayer.CCTV -> cctvCameras.value = cctvRepo.fetch(baseUrl)
+            MapLayer.OSINT -> osintPosts.value = osintRepo.fetch(baseUrl)
         }
     }
 

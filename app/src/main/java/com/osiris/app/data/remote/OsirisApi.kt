@@ -1,5 +1,6 @@
 package com.osiris.app.data.remote
 
+import com.osiris.app.data.model.CctvResponse
 import com.osiris.app.data.model.ConflictsResponse
 import com.osiris.app.data.model.CyberAttacksResponse
 import com.osiris.app.data.model.EarthquakesResponse
@@ -7,6 +8,7 @@ import com.osiris.app.data.model.FiresResponse
 import com.osiris.app.data.model.FlightsResponse
 import com.osiris.app.data.model.LiveNewsResponse
 import com.osiris.app.data.model.MaritimeResponse
+import com.osiris.app.data.model.OsintResponse
 import com.osiris.app.data.model.SatellitesResponse
 import com.osiris.app.data.model.WeatherResponse
 import okhttp3.ResponseBody
@@ -45,4 +47,10 @@ interface OsirisApi {
 
     @GET("api/cyber-attacks")
     suspend fun cyberAttacks(): CyberAttacksResponse
+
+    @GET("api/cctv")
+    suspend fun cctv(): CctvResponse
+
+    @GET("api/news")
+    suspend fun osintNews(): OsintResponse
 }

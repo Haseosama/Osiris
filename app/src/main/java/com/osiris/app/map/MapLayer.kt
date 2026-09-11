@@ -14,4 +14,6 @@ enum class MapLayer(val label: String, val pollIntervalMs: Long, val defaultEnab
     NEWS("Actu en direct", 30 * 60_000L, defaultEnabled = true),
     SATELLITES("Satellites", 60_000L, defaultEnabled = false),
     CYBER_ATTACKS("Cyberattaques", 15_000L, defaultEnabled = false),
+    CCTV("CCTV", 5 * 60_000L, defaultEnabled = false),
+    OSINT("OSINT Telegram", 2 * 60_000L, defaultEnabled = true),
 }

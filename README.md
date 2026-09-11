@@ -56,8 +56,11 @@ Au premier lancement, ouvre **Réglages** et renseigne l'URL de ton backend (ex.
       backend), actu en direct (tap sur un dot → WebView si `embed_allowed`, sinon ouverture
       externe — `/api/live-news` sert des flux YouTube, pas du HLS brut), cyberattaques
       (lignes statiques source→cible ; pas encore d'animation comme sur le web)
-- [ ] **Phase 3** — CCTV (clustering), OSINT Telegram (`/api/news`, en fait le flux Telegram/RSS
-      géoparsé — pas un flux "actu" classique malgré son nom)
+- [x] **Phase 3** — CCTV (`/api/cctv`, ~17k caméras, clustering MapLibre natif ; tap sur une
+      caméra individuelle → snapshot JPEG ou lien externe pour les flux MP4 ; zoome pour faire
+      éclater un cluster, pas encore de tap-to-zoom dédié), OSINT Telegram (`/api/news`, en fait
+      le flux Telegram/RSS géoparsé — pas un flux "actu" classique malgré son nom ; tap sur un
+      point → titre/description/lien)
 - [ ] **Phase 4** — panneau RECON en liste (pas des pins carte) : scanner ports, WHOIS/DNS, SSL,
       CVE (`/api/cyber-threats` — pas de lat/lng, ne peut pas être une couche carte), wallet
       crypto, OFAC ; + espace (`/api/space-weather` — indice Kp global, pas géolocalisé)

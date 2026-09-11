@@ -73,7 +73,11 @@ fun MapScreen(onOpenSettings: () -> Unit, viewModel: MapViewModel = viewModel())
     val satellites by viewModel.satellites.collectAsStateWithLifecycle()
     val newsFeeds by viewModel.newsFeeds.collectAsStateWithLifecycle()
     val cyberAttacks by viewModel.cyberAttacks.collectAsStateWithLifecycle()
+    val cctvCameras by viewModel.cctvCameras.collectAsStateWithLifecycle()
+    val osintPosts by viewModel.osintPosts.collectAsStateWithLifecycle()
     val selectedNewsFeed by viewModel.selectedNewsFeed.collectAsStateWithLifecycle()
+    val selectedCctvCamera by viewModel.selectedCctvCamera.collectAsStateWithLifecycle()
+    val selectedOsintPost by viewModel.selectedOsintPost.collectAsStateWithLifecycle()
 
     val mapView = remember { MapView(context).apply { onCreate(null) } }
     var maplibreMap by remember { mutableStateOf<MapLibreMap?>(null) }
@@ -131,6 +135,8 @@ fun MapScreen(onOpenSettings: () -> Unit, viewModel: MapViewModel = viewModel())
     LaunchedEffect(layersController, satellites) { layersController?.setSatellites(satellites) }
     LaunchedEffect(layersController, newsFeeds) { layersController?.setNewsFeeds(newsFeeds) }
     LaunchedEffect(layersController, cyberAttacks) { layersController?.setCyberAttacks(cyberAttacks) }
+    LaunchedEffect(layersController, cctvCameras) { layersController?.setCctv(cctvCameras) }
+    LaunchedEffect(layersController, osintPosts) { layersController?.setOsintPosts(osintPosts) }
     LaunchedEffect(layersController, layerToggles) {
         layersController?.let { controller ->
             layerToggles.forEach { (layer, enabled) -> controller.setLayerVisible(layer, enabled) }
@@ -141,24 +147,47 @@ fun MapScreen(onOpenSettings: () -> Unit, viewModel: MapViewModel = viewModel())
         val map = maplibreMap ?: return@LaunchedEffect
         map.addOnMapClickListener { latLng ->
             val screenPoint = map.projection.toScreenLocation(latLng)
-            val feature = map.queryRenderedFeatures(screenPoint, "news-layer").firstOrNull()
-            val id = feature?.getStringProperty("id")
-            val tappedFeed = newsFeeds.firstOrNull { it.id == id }
+
+            val newsId = map.queryRenderedFeatures(screenPoint, "news-layer").firstOrNull()
+                ?.getStringProperty("id")
+            val tappedFeed = newsFeeds.firstOrNull { it.id == newsId }
             if (tappedFeed != null) {
                 if (tappedFeed.embedAllowed) {
                     viewModel.selectNewsFeed(tappedFeed)
                 } else {
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(tappedFeed.url)))
                 }
-                true
-            } else {
-                false
+                return@addOnMapClickListener true
             }
+
+            val cameraId = map.queryRenderedFeatures(screenPoint, "cctv-unclustered").firstOrNull()
+                ?.getStringProperty("id")
+            val tappedCamera = cctvCameras.firstOrNull { it.id == cameraId }
+            if (tappedCamera != null) {
+                viewModel.selectCctvCamera(tappedCamera)
+                return@addOnMapClickListener true
+            }
+
+            val postId = map.queryRenderedFeatures(screenPoint, "osint-layer").firstOrNull()
+                ?.getStringProperty("id")
+            val tappedPost = osintPosts.firstOrNull { it.id == postId }
+            if (tappedPost != null) {
+                viewModel.selectOsintPost(tappedPost)
+                return@addOnMapClickListener true
+            }
+
+            false
         }
     }
 
     selectedNewsFeed?.let { feed ->
         NewsPlayerDialog(feed = feed, onDismiss = { viewModel.selectNewsFeed(null) })
+    }
+    selectedCctvCamera?.let { camera ->
+        CctvViewerDialog(camera = camera, onDismiss = { viewModel.selectCctvCamera(null) })
+    }
+    selectedOsintPost?.let { post ->
+        OsintPostDialog(post = post, onDismiss = { viewModel.selectOsintPost(null) })
     }
 
     Box(modifier = Modifier.fillMaxSize()) {

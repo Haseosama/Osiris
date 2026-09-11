@@ -1,5 +1,6 @@
 package com.osiris.app.map
 
+import com.osiris.app.data.model.CctvCamera
 import com.osiris.app.data.model.ConflictZone
 import com.osiris.app.data.model.CyberAttack
 import com.osiris.app.data.model.Earthquake
@@ -7,6 +8,7 @@ import com.osiris.app.data.model.FireEvent
 import com.osiris.app.data.model.FlightMarker
 import com.osiris.app.data.model.LiveNewsFeed
 import com.osiris.app.data.model.MaritimeResponse
+import com.osiris.app.data.model.OsintPost
 import com.osiris.app.data.model.Satellite
 import com.osiris.app.data.model.WeatherEvent
 import org.maplibre.android.style.expressions.Expression
@@ -15,6 +17,8 @@ import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
 import org.maplibre.android.style.layers.PropertyValue
+import org.maplibre.android.style.layers.SymbolLayer
+import org.maplibre.android.style.sources.GeoJsonOptions
 import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.android.maps.Style
 import org.maplibre.geojson.Feature
@@ -47,6 +51,8 @@ private val SAT_SCIENCE = "#FFD700".toColorInt()
 private val SAT_OTHER = "#00E5FF".toColorInt()
 
 private val NEWS_COLOR = "#00E5FF".toColorInt()
+
+private val CCTV_COLOR = "#00E5FF".toColorInt()
 
 /**
  * Adds/updates one GeoJSON source + circle layer per [MapLayer] on the given MapLibre [style].
@@ -306,6 +312,98 @@ class LayersController(private val style: Style) {
         }
     }
 
+    /**
+     * ~17k points in one source, so this uses MapLibre's built-in clustering instead of the
+     * flat [ensureCircleLayer] helper: a "clusters" circle layer sized by point_count, a text
+     * layer with the count, and an "unclustered" layer for individual cameras once zoomed in.
+     */
+    fun setCctv(cameras: List<CctvCamera>) {
+        val features = cameras.map { cam ->
+            feature(cam.lng, cam.lat) {
+                addStringProperty("id", cam.id)
+                addStringProperty("name", cam.name ?: "Caméra")
+                cam.feedUrl?.let { addStringProperty("feedUrl", it) }
+                cam.streamUrl?.let { addStringProperty("streamUrl", it) }
+            }
+        }
+        val collection = FeatureCollection.fromFeatures(features)
+        val existingSource = style.getSource("cctv-source") as? GeoJsonSource
+        if (existingSource != null) {
+            existingSource.setGeoJson(collection)
+        } else {
+            val options = GeoJsonOptions()
+                .withCluster(true)
+                .withClusterMaxZoom(13)
+                .withClusterRadius(50)
+            style.addSource(GeoJsonSource("cctv-source", collection, options))
+        }
+
+        if (style.getLayer("cctv-clusters") == null) {
+            val clusters = CircleLayer("cctv-clusters", "cctv-source").withProperties(
+                PropertyFactory.circleColor(CCTV_COLOR),
+                PropertyFactory.circleRadius(
+                    Expression.step(
+                        Expression.toNumber(Expression.get("point_count")),
+                        Expression.literal(14f),
+                        Expression.stop(50, Expression.literal(18f)),
+                        Expression.stop(500, Expression.literal(24f)),
+                    )
+                ),
+                PropertyFactory.circleOpacity(0.75f),
+            )
+            clusters.setFilter(Expression.has("point_count"))
+            style.addLayer(clusters)
+        }
+        if (style.getLayer("cctv-cluster-count") == null) {
+            val counts = SymbolLayer("cctv-cluster-count", "cctv-source").withProperties(
+                PropertyFactory.textField(Expression.toString(Expression.get("point_count"))),
+                PropertyFactory.textSize(12f),
+                PropertyFactory.textColor(android.graphics.Color.WHITE),
+                PropertyFactory.textIgnorePlacement(true),
+                PropertyFactory.textAllowOverlap(true),
+            )
+            counts.setFilter(Expression.has("point_count"))
+            style.addLayer(counts)
+        }
+        if (style.getLayer("cctv-unclustered") == null) {
+            val points = CircleLayer("cctv-unclustered", "cctv-source").withProperties(
+                PropertyFactory.circleColor(CCTV_COLOR),
+                PropertyFactory.circleRadius(4f),
+                PropertyFactory.circleStrokeWidth(1f),
+                PropertyFactory.circleStrokeColor("#0A0E14".toColorInt()),
+            )
+            points.setFilter(Expression.not(Expression.has("point_count")))
+            style.addLayer(points)
+        }
+    }
+
+    fun setOsintPosts(posts: List<OsintPost>) {
+        val features = posts.mapNotNull { post ->
+            val lat = post.lat ?: return@mapNotNull null
+            val lng = post.lng ?: return@mapNotNull null
+            feature(lng, lat) {
+                addStringProperty("id", post.id)
+                addStringProperty("title", post.title)
+                addNumberProperty("riskScore", post.riskScore)
+            }
+        }
+        updateSource("osint-source", features)
+        ensureCircleLayer(
+            layerId = "osint-layer",
+            sourceId = "osint-source",
+            color = PropertyFactory.circleColor(
+                Expression.interpolate(
+                    Expression.linear(),
+                    Expression.get("riskScore"),
+                    Expression.stop(1, Expression.color(SEVERITY_LOW)),
+                    Expression.stop(6, Expression.color(SEVERITY_MEDIUM)),
+                    Expression.stop(10, Expression.color(SEVERITY_WAR)),
+                )
+            ),
+            radius = PropertyFactory.circleRadius(6f),
+        )
+    }
+
     private val layerIdsByMapLayer: Map<MapLayer, List<String>> = mapOf(
         MapLayer.FLIGHTS to listOf("flights-layer"),
         MapLayer.EARTHQUAKES to listOf("earthquakes-layer"),
@@ -316,6 +414,8 @@ class LayersController(private val style: Style) {
         MapLayer.SATELLITES to listOf("satellites-layer"),
         MapLayer.NEWS to listOf("news-layer"),
         MapLayer.CYBER_ATTACKS to listOf("cyber-attacks-layer"),
+        MapLayer.CCTV to listOf("cctv-clusters", "cctv-cluster-count", "cctv-unclustered"),
+        MapLayer.OSINT to listOf("osint-layer"),
     )
 
     fun setLayerVisible(layer: MapLayer, visible: Boolean) {
