@@ -1,0 +1,101 @@
+package com.osiris.app.map
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.osiris.app.data.BackendPreferences
+import com.osiris.app.data.model.ConflictZone
+import com.osiris.app.data.model.Earthquake
+import com.osiris.app.data.model.FireEvent
+import com.osiris.app.data.model.FlightMarker
+import com.osiris.app.data.model.WeatherEvent
+import com.osiris.app.data.repository.ConflictsRepository
+import com.osiris.app.data.repository.EarthquakesRepository
+import com.osiris.app.data.repository.FiresRepository
+import com.osiris.app.data.repository.FlightsRepository
+import com.osiris.app.data.repository.WeatherRepository
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+
+class MapViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val backendPreferences = BackendPreferences(application)
+
+    private val flightsRepo = FlightsRepository()
+    private val earthquakesRepo = EarthquakesRepository()
+    private val firesRepo = FiresRepository()
+    private val weatherRepo = WeatherRepository()
+    private val conflictsRepo = ConflictsRepository()
+
+    val backendUrl: StateFlow<String> = backendPreferences.backendUrlFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "")
+
+    private val _layerToggles = MutableStateFlow(
+        MapLayer.entries.associateWith { it.defaultEnabled }
+    )
+    val layerToggles: StateFlow<Map<MapLayer, Boolean>> = _layerToggles.asStateFlow()
+
+    private val _layerErrors = MutableStateFlow<Map<MapLayer, String?>>(emptyMap())
+    val layerErrors: StateFlow<Map<MapLayer, String?>> = _layerErrors.asStateFlow()
+
+    val flights = MutableStateFlow<List<FlightMarker>>(emptyList())
+    val earthquakes = MutableStateFlow<List<Earthquake>>(emptyList())
+    val fires = MutableStateFlow<List<FireEvent>>(emptyList())
+    val weatherEvents = MutableStateFlow<List<WeatherEvent>>(emptyList())
+    val conflictZones = MutableStateFlow<List<ConflictZone>>(emptyList())
+
+    private val pollingJobs = mutableMapOf<MapLayer, Job>()
+
+    init {
+        _layerToggles.value.forEach { (layer, enabled) -> if (enabled) startPolling(layer) }
+    }
+
+    fun toggleLayer(layer: MapLayer) {
+        val nowEnabled = !(_layerToggles.value[layer] ?: false)
+        _layerToggles.update { it + (layer to nowEnabled) }
+        if (nowEnabled) {
+            startPolling(layer)
+        } else {
+            pollingJobs.remove(layer)?.cancel()
+        }
+    }
+
+    private fun startPolling(layer: MapLayer) {
+        pollingJobs[layer]?.cancel()
+        pollingJobs[layer] = viewModelScope.launch {
+            while (isActive) {
+                val baseUrl = backendUrl.value
+                if (baseUrl.isBlank()) {
+                    setError(layer, "Configure l'URL du backend dans Réglages")
+                } else {
+                    runCatching { fetch(layer, baseUrl) }
+                        .onSuccess { setError(layer, null) }
+                        .onFailure { setError(layer, it.message ?: "Erreur réseau") }
+                }
+                delay(layer.pollIntervalMs)
+            }
+        }
+    }
+
+    private suspend fun fetch(layer: MapLayer, baseUrl: String) {
+        when (layer) {
+            MapLayer.FLIGHTS -> flights.value = flightsRepo.fetch(baseUrl)
+            MapLayer.EARTHQUAKES -> earthquakes.value = earthquakesRepo.fetch(baseUrl)
+            MapLayer.FIRES -> fires.value = firesRepo.fetch(baseUrl)
+            MapLayer.WEATHER -> weatherEvents.value = weatherRepo.fetch(baseUrl)
+            MapLayer.CONFLICTS -> conflictZones.value = conflictsRepo.fetch(baseUrl)
+        }
+    }
+
+    private fun setError(layer: MapLayer, message: String?) {
+        _layerErrors.update { it + (layer to message) }
+    }
+}
