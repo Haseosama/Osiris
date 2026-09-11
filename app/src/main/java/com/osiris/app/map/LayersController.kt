@@ -1,5 +1,7 @@
 package com.osiris.app.map
 
+import android.content.Context
+import com.osiris.app.R
 import com.osiris.app.data.model.CctvCamera
 import com.osiris.app.data.model.ConflictZone
 import com.osiris.app.data.model.CyberAttack
@@ -59,31 +61,38 @@ private val CCTV_COLOR = "#00E5FF".toColorInt()
  * Data is pushed in via `set*` whenever a repository poll completes; visibility is toggled
  * independently so a layer can be hidden without losing its cached data.
  */
-class LayersController(private val style: Style) {
+class LayersController(private val style: Style, private val context: Context) {
 
     fun setFlights(markers: List<FlightMarker>) {
+        ensureImage("flight-commercial", R.drawable.ic_plane, FLIGHT_COMMERCIAL)
+        ensureImage("flight-private", R.drawable.ic_plane, FLIGHT_PRIVATE)
+        ensureImage("flight-jet", R.drawable.ic_plane, FLIGHT_JET)
+        ensureImage("flight-military", R.drawable.ic_plane, FLIGHT_MILITARY)
+
         val features = markers.mapIndexed { index, marker ->
             feature(marker.flight.lng, marker.flight.lat) {
                 addNumberProperty("idx", index)
                 addStringProperty("category", marker.category.name)
                 marker.flight.callsign?.let { addStringProperty("callsign", it) }
+                marker.flight.heading?.let { addNumberProperty("heading", it) }
             }
         }
         updateSource("flights-source", features)
-        ensureCircleLayer(
+        ensureSymbolLayer(
             layerId = "flights-layer",
             sourceId = "flights-source",
-            color = PropertyFactory.circleColor(
+            iconImage = PropertyFactory.iconImage(
                 Expression.match(
                     Expression.get("category"),
-                    Expression.color(FLIGHT_COMMERCIAL),
-                    Expression.stop("COMMERCIAL", Expression.color(FLIGHT_COMMERCIAL)),
-                    Expression.stop("PRIVATE", Expression.color(FLIGHT_PRIVATE)),
-                    Expression.stop("JET", Expression.color(FLIGHT_JET)),
-                    Expression.stop("MILITARY", Expression.color(FLIGHT_MILITARY)),
+                    Expression.literal("flight-commercial"),
+                    Expression.stop("COMMERCIAL", Expression.literal("flight-commercial")),
+                    Expression.stop("PRIVATE", Expression.literal("flight-private")),
+                    Expression.stop("JET", Expression.literal("flight-jet")),
+                    Expression.stop("MILITARY", Expression.literal("flight-military")),
                 )
             ),
-            radius = PropertyFactory.circleRadius(4f),
+            iconSize = 0.4f,
+            iconRotate = PropertyFactory.iconRotate(Expression.get("heading")),
         )
     }
 
@@ -112,6 +121,8 @@ class LayersController(private val style: Style) {
     }
 
     fun setFires(fires: List<FireEvent>) {
+        ensureImage("fire-icon", R.drawable.ic_flame, FIRE_COLOR)
+
         val features = fires.mapIndexed { index, fire ->
             feature(fire.lng, fire.lat) {
                 addNumberProperty("idx", index)
@@ -119,11 +130,11 @@ class LayersController(private val style: Style) {
             }
         }
         updateSource("fires-source", features)
-        ensureCircleLayer(
+        ensureSymbolLayer(
             layerId = "fires-layer",
             sourceId = "fires-source",
-            color = PropertyFactory.circleColor(FIRE_COLOR),
-            radius = PropertyFactory.circleRadius(3.5f),
+            iconImage = PropertyFactory.iconImage("fire-icon"),
+            iconSize = 0.3f,
         )
     }
 
@@ -179,6 +190,10 @@ class LayersController(private val style: Style) {
     }
 
     fun setMaritime(maritime: MaritimeResponse) {
+        ensureImage("port-container", R.drawable.ic_anchor, PORT_CONTAINER)
+        ensureImage("port-energy", R.drawable.ic_anchor, PORT_ENERGY)
+        ensureImage("port-naval", R.drawable.ic_anchor, PORT_NAVAL)
+
         val portFeatures = maritime.ports.mapIndexed { index, port ->
             feature(port.lng, port.lat) {
                 addNumberProperty("idx", index)
@@ -187,19 +202,19 @@ class LayersController(private val style: Style) {
             }
         }
         updateSource("ports-source", portFeatures)
-        ensureCircleLayer(
+        ensureSymbolLayer(
             layerId = "ports-layer",
             sourceId = "ports-source",
-            color = PropertyFactory.circleColor(
+            iconImage = PropertyFactory.iconImage(
                 Expression.match(
                     Expression.get("type"),
-                    Expression.color(PORT_CONTAINER),
-                    Expression.stop("container", Expression.color(PORT_CONTAINER)),
-                    Expression.stop("energy", Expression.color(PORT_ENERGY)),
-                    Expression.stop("naval", Expression.color(PORT_NAVAL)),
+                    Expression.literal("port-container"),
+                    Expression.stop("container", Expression.literal("port-container")),
+                    Expression.stop("energy", Expression.literal("port-energy")),
+                    Expression.stop("naval", Expression.literal("port-naval")),
                 )
             ),
-            radius = PropertyFactory.circleRadius(5f),
+            iconSize = 0.4f,
         )
 
         val chokepointFeatures = maritime.chokepoints.mapIndexed { index, choke ->
@@ -227,23 +242,34 @@ class LayersController(private val style: Style) {
             radius = PropertyFactory.circleRadius(9f),
         )
 
+        ensureImage("ship-icon", R.drawable.ic_boat, SHIP_COLOR)
+
         val shipFeatures = maritime.ships.mapIndexed { index, ship ->
             feature(ship.lng, ship.lat) {
                 addNumberProperty("idx", index)
                 ship.name?.let { addStringProperty("name", it) }
                 ship.type?.let { addStringProperty("type", it) }
+                ship.heading?.let { addNumberProperty("heading", it) }
             }
         }
         updateSource("ships-source", shipFeatures)
-        ensureCircleLayer(
+        ensureSymbolLayer(
             layerId = "ships-layer",
             sourceId = "ships-source",
-            color = PropertyFactory.circleColor(SHIP_COLOR),
-            radius = PropertyFactory.circleRadius(2.5f),
+            iconImage = PropertyFactory.iconImage("ship-icon"),
+            iconSize = 0.28f,
+            iconRotate = PropertyFactory.iconRotate(Expression.get("heading")),
         )
     }
 
     fun setSatellites(satellites: List<Satellite>) {
+        ensureImage("sat-comms", R.drawable.ic_satellite, SAT_COMMS)
+        ensureImage("sat-navigation", R.drawable.ic_satellite, SAT_NAVIGATION)
+        ensureImage("sat-earth_obs", R.drawable.ic_satellite, SAT_EARTH_OBS)
+        ensureImage("sat-military", R.drawable.ic_satellite, SAT_MILITARY)
+        ensureImage("sat-science", R.drawable.ic_satellite, SAT_SCIENCE)
+        ensureImage("sat-other", R.drawable.ic_satellite, SAT_OTHER)
+
         val features = satellites.mapIndexed { index, sat ->
             feature(sat.lng, sat.lat) {
                 addNumberProperty("idx", index)
@@ -253,22 +279,22 @@ class LayersController(private val style: Style) {
             }
         }
         updateSource("satellites-source", features)
-        ensureCircleLayer(
+        ensureSymbolLayer(
             layerId = "satellites-layer",
             sourceId = "satellites-source",
-            color = PropertyFactory.circleColor(
+            iconImage = PropertyFactory.iconImage(
                 Expression.match(
                     Expression.get("category"),
-                    Expression.color(SAT_OTHER),
-                    Expression.stop("comms", Expression.color(SAT_COMMS)),
-                    Expression.stop("navigation", Expression.color(SAT_NAVIGATION)),
-                    Expression.stop("earth_obs", Expression.color(SAT_EARTH_OBS)),
-                    Expression.stop("military", Expression.color(SAT_MILITARY)),
-                    Expression.stop("science", Expression.color(SAT_SCIENCE)),
-                    Expression.stop("other", Expression.color(SAT_OTHER)),
+                    Expression.literal("sat-other"),
+                    Expression.stop("comms", Expression.literal("sat-comms")),
+                    Expression.stop("navigation", Expression.literal("sat-navigation")),
+                    Expression.stop("earth_obs", Expression.literal("sat-earth_obs")),
+                    Expression.stop("military", Expression.literal("sat-military")),
+                    Expression.stop("science", Expression.literal("sat-science")),
+                    Expression.stop("other", Expression.literal("sat-other")),
                 )
             ),
-            radius = PropertyFactory.circleRadius(2f),
+            iconSize = 0.3f,
         )
     }
 
@@ -488,6 +514,35 @@ class LayersController(private val style: Style) {
             PropertyFactory.circleStrokeWidth(1f),
             PropertyFactory.circleStrokeColor("#0A0E14".toColorInt()),
         )
+        style.addLayer(layer)
+    }
+
+    private val registeredImages = mutableSetOf<String>()
+
+    /** Registers a tinted bitmap under [name] once — [IconBitmaps] renders a fresh bitmap per
+     * (drawable, color) pair, so this is skipped on every later poll once it's in the style. */
+    private fun ensureImage(name: String, resId: Int, tint: Int) {
+        if (!registeredImages.add(name)) return
+        style.addImage(name, IconBitmaps.render(context, resId, tint))
+    }
+
+    private fun ensureSymbolLayer(
+        layerId: String,
+        sourceId: String,
+        iconImage: PropertyValue<*>,
+        iconSize: Float,
+        iconRotate: PropertyValue<*>? = null,
+    ) {
+        if (style.getLayer(layerId) != null) return
+        val properties = buildList {
+            add(iconImage)
+            add(PropertyFactory.iconSize(iconSize))
+            add(PropertyFactory.iconAllowOverlap(true))
+            add(PropertyFactory.iconIgnorePlacement(true))
+            add(PropertyFactory.iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP))
+            iconRotate?.let { add(it) }
+        }
+        val layer = SymbolLayer(layerId, sourceId).withProperties(*properties.toTypedArray())
         style.addLayer(layer)
     }
 

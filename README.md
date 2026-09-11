@@ -117,6 +117,14 @@ Au premier lancement, ouvre **Réglages** et renseigne l'URL de ton backend (ex.
       construit un `InfoDialogContent` (titre/sous-titre/lignes) via une fonction d'extension
       par type de modèle (`FlightMarker.toInfoDialog()`, etc.), affiché par un unique
       `EntityInfoDialog` réutilisable plutôt que neuf boîtes de dialogue quasi identiques
+- [x] **Icônes pictographiques** — vols (avion, orienté selon le cap via `icon-rotate`),
+      satellites, navires (bateau, orienté selon le cap) et ports (ancre) remplacent leurs
+      cercles colorés par de vraies icônes ; `IconBitmaps` rend un `VectorDrawable` en bitmap
+      teinté par (icône, couleur), un par catégorie existante (4 pour les vols, 6 pour les
+      satellites, 3 pour les ports) donc le code couleur par catégorie qui marchait déjà en
+      `circleColor` continue de marcher en `iconImage`, juste avec des bitmaps différents par
+      teinte plutôt qu'un remplissage dynamique. Séismes/météo/conflits/points de passage
+      restent des cercles (marqueur de zone/magnitude, pas un pictogramme d'objet physique)
 
 ## Licence
 

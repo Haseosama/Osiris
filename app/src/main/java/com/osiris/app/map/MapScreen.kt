@@ -107,7 +107,7 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
             maplibreMap = map
             map.moveCamera(CameraUpdateFactory.newCameraPosition(DEFAULT_CAMERA))
             map.setStyle(Style.Builder().fromUri(DEFAULT_STYLE_URL)) { style ->
-                layersController = LayersController(style)
+                layersController = LayersController(style, context)
             }
         }
     }
