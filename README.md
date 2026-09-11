@@ -125,6 +125,21 @@ Au premier lancement, ouvre **Réglages** et renseigne l'URL de ton backend (ex.
       `circleColor` continue de marcher en `iconImage`, juste avec des bitmaps différents par
       teinte plutôt qu'un remplissage dynamique. Séismes/météo/conflits/points de passage
       restent des cercles (marqueur de zone/magnitude, pas un pictogramme d'objet physique)
+- [x] **CCTV : icône caméra + vraie vue "live"** — les caméras individuelles (hors clusters)
+      affichent une icône caméra plutôt qu'un cercle. Au tap : pour les rares caméras avec un
+      `stream_url` (Quebec 511), lecture vidéo réelle via Media3 ExoPlayer dans un `PlayerView` ;
+      pour toutes les autres (TfL, Caltrans, WSDOT…) qui n'exposent qu'un JPEG statique
+      régulièrement mis à jour côté source — pas de vrai flux vidéo disponible — le snapshot se
+      rafraîchit automatiquement toutes les 3s (URL "cache-bustée" avec un paramètre `?t=`), ce
+      qui *est* le mieux qu'on puisse offrir comme "direct" pour ces caméras
+- [x] **Vue satellite + style de carte plus détaillé** — bouton calque dans la barre du haut,
+      bascule entre le style vectoriel par défaut (passé de MapLibre demo tiles, très sommaire,
+      à [OpenFreeMap](https://openfreemap.org) Liberty — gratuit, sans clé, bâtiments/routes/
+      occupation du sol) et une vue satellite (Esri World Imagery + calque noms de lieux, la
+      même source gratuite et sans clé que Romurbex utilise déjà via osmdroid, ici branchée en
+      RasterSource MapLibre). Changer de style recrée le `LayersController` contre le nouveau
+      `Style` ; comme tous les `LaunchedEffect` de couches sont indexés dessus, elles se
+      redessinent automatiquement sur le nouveau fond de carte sans attendre le prochain poll
 
 ## Licence
 

@@ -1,32 +1,54 @@
 package com.osiris.app.map
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.osiris.app.data.model.CctvCamera
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
-/** Shows a static JPEG snapshot ([CctvCamera.feedUrl]) or, for MP4-only cameras, a link out. */
+private const val SNAPSHOT_REFRESH_MS = 3000L
+
+/**
+ * Shows the closest thing to "live" each camera actually offers: real MP4 playback (Media3)
+ * for the handful of cameras with [CctvCamera.streamUrl] (e.g. Quebec 511), or an
+ * auto-refreshing [CctvCamera.feedUrl] snapshot for the rest — most Osiris CCTV sources
+ * (TfL, Caltrans, WSDOT...) only ever expose a periodically-updated JPEG, not real video, so
+ * that refresh loop *is* the live view for them.
+ */
 @Composable
 fun CctvViewerDialog(camera: CctvCamera, onDismiss: () -> Unit) {
-    val context = LocalContext.current
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface) {
             Column(
@@ -44,20 +66,11 @@ fun CctvViewerDialog(camera: CctvCamera, onDismiss: () -> Unit) {
                 }
                 Spacer(Modifier.height(12.dp))
 
-                val feedUrl = camera.feedUrl
                 val streamUrl = camera.streamUrl
+                val feedUrl = camera.feedUrl
                 when {
-                    feedUrl != null -> AsyncImage(
-                        model = feedUrl,
-                        contentDescription = camera.name,
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp),
-                        contentScale = ContentScale.Fit,
-                    )
-                    streamUrl != null -> Button(
-                        onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(streamUrl))) },
-                    ) {
-                        Text("Ouvrir le flux vidéo")
-                    }
+                    streamUrl != null -> CctvVideoStream(streamUrl)
+                    feedUrl != null -> CctvLiveSnapshot(feedUrl, camera.name)
                     else -> Text(
                         "Pas de flux disponible pour cette caméra",
                         style = MaterialTheme.typography.bodySmall,
@@ -69,4 +82,59 @@ fun CctvViewerDialog(camera: CctvCamera, onDismiss: () -> Unit) {
             }
         }
     }
+}
+
+@Composable
+private fun CctvVideoStream(streamUrl: String) {
+    val context = LocalContext.current
+    val exoPlayer = remember(streamUrl) {
+        ExoPlayer.Builder(context).build().apply {
+            setMediaItem(MediaItem.fromUri(streamUrl))
+            prepare()
+            playWhenReady = true
+        }
+    }
+    DisposableEffect(exoPlayer) {
+        onDispose { exoPlayer.release() }
+    }
+    AndroidView(
+        factory = { PlayerView(context).apply { player = exoPlayer; useController = true } },
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(16f / 9f)
+            .clip(MaterialTheme.shapes.small),
+    )
+}
+
+@Composable
+private fun CctvLiveSnapshot(feedUrl: String, cameraName: String?) {
+    var snapshotUrl by remember(feedUrl) { mutableStateOf(cacheBust(feedUrl)) }
+    LaunchedEffect(feedUrl) {
+        while (isActive) {
+            delay(SNAPSHOT_REFRESH_MS)
+            snapshotUrl = cacheBust(feedUrl)
+        }
+    }
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.error, modifier = Modifier.size(8.dp)) {}
+        Spacer(Modifier.width(6.dp))
+        Text(
+            "EN DIRECT (image actualisée toutes les ${SNAPSHOT_REFRESH_MS / 1000}s)",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    Spacer(Modifier.height(6.dp))
+    AsyncImage(
+        model = snapshotUrl,
+        contentDescription = cameraName,
+        modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp),
+        contentScale = ContentScale.Fit,
+    )
+}
+
+private fun cacheBust(url: String): String {
+    val separator = if (url.contains('?')) '&' else '?'
+    return "$url${separator}t=${System.currentTimeMillis()}"
 }

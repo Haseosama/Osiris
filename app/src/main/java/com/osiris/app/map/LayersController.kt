@@ -376,6 +376,8 @@ class LayersController(private val style: Style, private val context: Context) {
      * layer with the count, and an "unclustered" layer for individual cameras once zoomed in.
      */
     fun setCctv(cameras: List<CctvCamera>) {
+        ensureImage("cctv-camera", R.drawable.ic_camera, CCTV_COLOR)
+
         val features = cameras.map { cam ->
             feature(cam.lng, cam.lat) {
                 addStringProperty("id", cam.id)
@@ -424,11 +426,11 @@ class LayersController(private val style: Style, private val context: Context) {
             style.addLayer(counts)
         }
         if (style.getLayer("cctv-unclustered") == null) {
-            val points = CircleLayer("cctv-unclustered", "cctv-source").withProperties(
-                PropertyFactory.circleColor(CCTV_COLOR),
-                PropertyFactory.circleRadius(4f),
-                PropertyFactory.circleStrokeWidth(1f),
-                PropertyFactory.circleStrokeColor("#0A0E14".toColorInt()),
+            val points = SymbolLayer("cctv-unclustered", "cctv-source").withProperties(
+                PropertyFactory.iconImage("cctv-camera"),
+                PropertyFactory.iconSize(0.45f),
+                PropertyFactory.iconAllowOverlap(true),
+                PropertyFactory.iconIgnorePlacement(true),
             )
             points.setFilter(Expression.not(Expression.has("point_count")))
             style.addLayer(points)

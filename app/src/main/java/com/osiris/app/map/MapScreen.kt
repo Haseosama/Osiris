@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -53,8 +54,32 @@ import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.RasterLayer
+import org.maplibre.android.style.sources.RasterSource
+import org.maplibre.android.style.sources.TileSet
 
-private const val DEFAULT_STYLE_URL = "https://demotiles.maplibre.org/style.json"
+/** OpenFreeMap's hosted vector style — free, keyless, unlimited, no account needed (in the
+ * same "no third-party billing account" spirit as OpenStreetMap in Romurbex). Noticeably more
+ * detailed than MapLibre's own bare demo tiles: buildings, land use, transit lines. */
+private const val STREET_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty"
+
+/** Esri World Imagery — same free, keyless satellite source Romurbex already uses via osmdroid
+ * (SatelliteTileSource.kt), here wired up as a plain MapLibre raster source instead, plus its
+ * matching boundaries/places overlay since satellite imagery alone carries no place names. */
+private const val ESRI_IMAGERY_URL =
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+private const val ESRI_LABELS_URL =
+    "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+
+private enum class MapStyleMode { STREET, SATELLITE }
+
+private fun satelliteStyleBuilder(): Style.Builder =
+    Style.Builder()
+        .withSource(RasterSource("esri-imagery", TileSet("2.1.0", ESRI_IMAGERY_URL), 256))
+        .withLayer(RasterLayer("esri-imagery-layer", "esri-imagery"))
+        .withSource(RasterSource("esri-labels", TileSet("2.1.0", ESRI_LABELS_URL), 256))
+        .withLayer(RasterLayer("esri-labels-layer", "esri-labels"))
+
 private val DEFAULT_CAMERA = CameraPosition.Builder().target(LatLng(20.0, 0.0)).zoom(1.5).build()
 
 @Composable
@@ -86,6 +111,7 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
     val mapView = remember { MapView(context).apply { onCreate(null) } }
     var maplibreMap by remember { mutableStateOf<MapLibreMap?>(null) }
     var layersController by remember { mutableStateOf<LayersController?>(null) }
+    var mapStyleMode by remember { mutableStateOf(MapStyleMode.STREET) }
 
     DisposableEffect(lifecycleOwner, mapView) {
         val observer = LifecycleEventObserver { _, event ->
@@ -106,9 +132,21 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
         mapView.getMapAsync { map ->
             maplibreMap = map
             map.moveCamera(CameraUpdateFactory.newCameraPosition(DEFAULT_CAMERA))
-            map.setStyle(Style.Builder().fromUri(DEFAULT_STYLE_URL)) { style ->
-                layersController = LayersController(style, context)
-            }
+        }
+    }
+
+    // Re-runs on every mode switch, not just once — setStyle() replaces the whole Style object,
+    // so layersController is rebuilt against it; every LaunchedEffect below that's keyed on
+    // layersController then reruns automatically and repaints all current layer data onto the
+    // new style, without needing to wait for the next network poll.
+    LaunchedEffect(maplibreMap, mapStyleMode) {
+        val map = maplibreMap ?: return@LaunchedEffect
+        val builder = when (mapStyleMode) {
+            MapStyleMode.STREET -> Style.Builder().fromUri(STREET_STYLE_URL)
+            MapStyleMode.SATELLITE -> satelliteStyleBuilder()
+        }
+        map.setStyle(builder) { style ->
+            layersController = LayersController(style, context)
         }
     }
 
@@ -249,6 +287,25 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
                     color = MaterialTheme.colorScheme.primary,
                 )
                 Row {
+                    IconButton(
+                        onClick = {
+                            mapStyleMode = if (mapStyleMode == MapStyleMode.STREET) {
+                                MapStyleMode.SATELLITE
+                            } else {
+                                MapStyleMode.STREET
+                            }
+                        },
+                    ) {
+                        Icon(
+                            Icons.Filled.Layers,
+                            contentDescription = "Vue satellite",
+                            tint = if (mapStyleMode == MapStyleMode.SATELLITE) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onBackground
+                            },
+                        )
+                    }
                     IconButton(onClick = onOpenRecon) {
                         Icon(
                             Icons.Filled.Build,

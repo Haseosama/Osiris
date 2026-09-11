@@ -1,0 +1,12 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Body + viewfinder bump, with the lens punched out as a hole via evenOdd fill so it
+         still reads as a camera once the whole bitmap is tinted a single flat color. -->
+    <path
+        android:fillType="evenOdd"
+        android:pathData="M3,7 L21,7 L21,18 L3,18 Z M7,7 L8,4 L16,4 L17,7 Z M12,12.5 m-3.5,0 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0"
+        android:fillColor="#FFFFFF" />
+</vector>
