@@ -91,7 +91,7 @@ class LayersController(private val style: Style, private val context: Context) {
                     Expression.stop("MILITARY", Expression.literal("flight-military")),
                 )
             ),
-            iconSize = 0.4f,
+            iconSize = 0.7f,
             iconRotate = PropertyFactory.iconRotate(Expression.get("heading")),
         )
     }
@@ -134,7 +134,7 @@ class LayersController(private val style: Style, private val context: Context) {
             layerId = "fires-layer",
             sourceId = "fires-source",
             iconImage = PropertyFactory.iconImage("fire-icon"),
-            iconSize = 0.3f,
+            iconSize = 0.45f,
         )
     }
 
@@ -214,7 +214,7 @@ class LayersController(private val style: Style, private val context: Context) {
                     Expression.stop("naval", Expression.literal("port-naval")),
                 )
             ),
-            iconSize = 0.4f,
+            iconSize = 0.55f,
         )
 
         val chokepointFeatures = maritime.chokepoints.mapIndexed { index, choke ->
@@ -257,7 +257,7 @@ class LayersController(private val style: Style, private val context: Context) {
             layerId = "ships-layer",
             sourceId = "ships-source",
             iconImage = PropertyFactory.iconImage("ship-icon"),
-            iconSize = 0.28f,
+            iconSize = 0.5f,
             iconRotate = PropertyFactory.iconRotate(Expression.get("heading")),
         )
     }
@@ -294,7 +294,7 @@ class LayersController(private val style: Style, private val context: Context) {
                     Expression.stop("other", Expression.literal("sat-other")),
                 )
             ),
-            iconSize = 0.3f,
+            iconSize = 0.5f,
         )
     }
 

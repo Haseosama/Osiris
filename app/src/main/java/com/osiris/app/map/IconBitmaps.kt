@@ -10,7 +10,7 @@ import android.graphics.Canvas
  * expressions, the same way they already work via circleColor for the untouched layers.
  */
 object IconBitmaps {
-    private const val SIZE_PX = 64
+    private const val SIZE_PX = 96
 
     fun render(context: Context, resId: Int, tint: Int): Bitmap {
         val drawable = requireNotNull(context.getDrawable(resId)) { "Missing drawable resource $resId" }.mutate()
