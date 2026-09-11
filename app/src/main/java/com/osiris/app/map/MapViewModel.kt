@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.osiris.app.data.BackendPreferences
+import com.osiris.app.data.LayerCache
 import com.osiris.app.data.model.CctvCamera
 import com.osiris.app.data.model.ConflictZone
 import com.osiris.app.data.model.CyberAttack
@@ -41,6 +42,7 @@ import kotlinx.coroutines.launch
 class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     private val backendPreferences = BackendPreferences(application)
+    private val layerCache = LayerCache(application)
 
     private val flightsRepo = FlightsRepository()
     private val earthquakesRepo = EarthquakesRepository()
@@ -112,7 +114,26 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val pollingJobs = mutableMapOf<MapLayer, Job>()
 
     init {
-        _layerToggles.value.forEach { (layer, enabled) -> if (enabled) startPolling(layer) }
+        viewModelScope.launch {
+            loadCachedData()
+            _layerToggles.value.forEach { (layer, enabled) -> if (enabled) startPolling(layer) }
+        }
+    }
+
+    /** Fills every layer with whatever was cached last session, before polling starts, so a
+     * fresh network fetch never gets clobbered by a slower cache read landing after it. */
+    private suspend fun loadCachedData() {
+        layerCache.loadFlights()?.let { flights.value = it }
+        layerCache.loadEarthquakes()?.let { earthquakes.value = it }
+        layerCache.loadFires()?.let { fires.value = it }
+        layerCache.loadWeather()?.let { weatherEvents.value = it }
+        layerCache.loadConflicts()?.let { conflictZones.value = it }
+        layerCache.loadMaritime()?.let { maritime.value = it }
+        layerCache.loadSatellites()?.let { satellites.value = it }
+        layerCache.loadNews()?.let { newsFeeds.value = it }
+        layerCache.loadCyberAttacks()?.let { cyberAttacks.value = it }
+        layerCache.loadCctv()?.let { cctvCameras.value = it }
+        layerCache.loadOsint()?.let { osintPosts.value = it }
     }
 
     fun toggleLayer(layer: MapLayer) {
@@ -144,17 +165,17 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun fetch(layer: MapLayer, baseUrl: String) {
         when (layer) {
-            MapLayer.FLIGHTS -> flights.value = flightsRepo.fetch(baseUrl)
-            MapLayer.EARTHQUAKES -> earthquakes.value = earthquakesRepo.fetch(baseUrl)
-            MapLayer.FIRES -> fires.value = firesRepo.fetch(baseUrl)
-            MapLayer.WEATHER -> weatherEvents.value = weatherRepo.fetch(baseUrl)
-            MapLayer.CONFLICTS -> conflictZones.value = conflictsRepo.fetch(baseUrl)
-            MapLayer.MARITIME -> maritime.value = maritimeRepo.fetch(baseUrl)
-            MapLayer.SATELLITES -> satellites.value = satellitesRepo.fetch(baseUrl)
-            MapLayer.NEWS -> newsFeeds.value = liveNewsRepo.fetch(baseUrl)
-            MapLayer.CYBER_ATTACKS -> cyberAttacks.value = cyberAttacksRepo.fetch(baseUrl)
-            MapLayer.CCTV -> cctvCameras.value = cctvRepo.fetch(baseUrl)
-            MapLayer.OSINT -> osintPosts.value = osintRepo.fetch(baseUrl)
+            MapLayer.FLIGHTS -> flightsRepo.fetch(baseUrl).also { flights.value = it; layerCache.saveFlights(it) }
+            MapLayer.EARTHQUAKES -> earthquakesRepo.fetch(baseUrl).also { earthquakes.value = it; layerCache.saveEarthquakes(it) }
+            MapLayer.FIRES -> firesRepo.fetch(baseUrl).also { fires.value = it; layerCache.saveFires(it) }
+            MapLayer.WEATHER -> weatherRepo.fetch(baseUrl).also { weatherEvents.value = it; layerCache.saveWeather(it) }
+            MapLayer.CONFLICTS -> conflictsRepo.fetch(baseUrl).also { conflictZones.value = it; layerCache.saveConflicts(it) }
+            MapLayer.MARITIME -> maritimeRepo.fetch(baseUrl).also { maritime.value = it; layerCache.saveMaritime(it) }
+            MapLayer.SATELLITES -> satellitesRepo.fetch(baseUrl).also { satellites.value = it; layerCache.saveSatellites(it) }
+            MapLayer.NEWS -> liveNewsRepo.fetch(baseUrl).also { newsFeeds.value = it; layerCache.saveNews(it) }
+            MapLayer.CYBER_ATTACKS -> cyberAttacksRepo.fetch(baseUrl).also { cyberAttacks.value = it; layerCache.saveCyberAttacks(it) }
+            MapLayer.CCTV -> cctvRepo.fetch(baseUrl).also { cctvCameras.value = it; layerCache.saveCctv(it) }
+            MapLayer.OSINT -> osintRepo.fetch(baseUrl).also { osintPosts.value = it; layerCache.saveOsint(it) }
         }
     }
 

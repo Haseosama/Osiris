@@ -28,18 +28,35 @@ Appli Android (Kotlin/Compose, MapLibre Native)  →  ton backend Osiris auto-h�
 
 ## 1. Héberger le backend Osiris
 
-Cette appli ne fonctionne qu'avec une instance Osiris joignable depuis ton téléphone. Suis le
-guide du dépôt source :
+Cette appli ne fonctionne qu'avec une instance Osiris joignable depuis ton téléphone. Deux
+façons de la lancer :
+
+**Node.js direct** (le plus simple pour tester en local) :
 
 ```bash
 git clone https://github.com/simplifaisoul/osiris.git
 cd osiris
-cp .env.template .env
+npm install
+npm run dev
+```
+
+Ouvre [http://localhost:3000](http://localhost:3000) sur ton PC pour vérifier que ça tourne.
+Fonctionne sans aucune clé API — toutes les couches keyless marchent tout de suite, seul le
+scanner RECON répond 503 tant que `SCANNER_URL`/`SCANNER_KEY` ne sont pas renseignés dans un
+`.env` (`cp .env.example .env`).
+
+**Docker** (isolation, redémarre en arrière-plan) :
+
+```bash
+cp .env.example .env
 docker compose up -d
 ```
 
 Voir [DOCKER.md](https://github.com/simplifaisoul/osiris/blob/master/DOCKER.md) du dépôt Osiris
 pour l'auto-hébergement complet (CasaOS, clés API optionnelles FIRMS/OpenSky/N2YO, scanner RECON).
+
+Dans les deux cas, ton téléphone doit joindre l'IP locale de ton PC (même Wi-Fi), pas
+`localhost` — vois l'étape 2.
 
 ## 2. Ouvrir ce projet
 
@@ -73,9 +90,14 @@ Au premier lancement, ouvre **Réglages** et renseigne l'URL de ton backend (ex.
       instables pour le rapport effort/valeur d'un DTO dédié ; bannière "Backend injoignable" sur
       la carte quand toutes les couches actives échouent contre un backend pourtant configuré
       (distinct du bandeau "backend non configuré")
+- [x] **Cache local par couche** — `LayerCache` persiste le dernier payload reçu de chaque
+      couche dans un fichier JSON privé (`filesDir/layer_cache/`), rechargé au lancement avant
+      que le premier polling démarre (pour ne pas se faire écraser par une lecture disque plus
+      lente qu'une réponse réseau) : la carte affiche les dernières données connues
+      immédiatement plutôt que de repartir à vide à chaque ouverture de l'appli
 - [ ] **Pistes restantes** — vues dédiées pour WHOIS/scanner/crypto, tap-to-zoom sur un cluster
-      CCTV, animation des arcs cyberattaques, icône d'appli plus travaillée, cache local des
-      dernières données par couche (tout redémarre à vide aujourd'hui)
+      CCTV, animation des arcs cyberattaques, icône d'appli plus travaillée, purge du cache
+      au-delà d'un certain âge (aujourd'hui il n'expire jamais)
 
 ## Licence
 
