@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.osiris.app.data.BackendPreferences
 import com.osiris.app.data.LayerCache
+import com.osiris.app.data.PollIntervalPreferences
 import com.osiris.app.data.model.CctvCamera
 import com.osiris.app.data.model.ConflictZone
 import com.osiris.app.data.model.CyberAttack
@@ -34,6 +35,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
@@ -43,6 +45,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     private val backendPreferences = BackendPreferences(application)
     private val layerCache = LayerCache(application)
+    private val pollIntervalPreferences = PollIntervalPreferences(application)
 
     private val flightsRepo = FlightsRepository()
     private val earthquakesRepo = EarthquakesRepository()
@@ -123,6 +126,24 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     private val pollingJobs = mutableMapOf<MapLayer, Job>()
     private var pulseJob: Job? = null
+    private var flightsAnimJob: Job? = null
+    private var maritimeAnimJob: Job? = null
+
+    // Last real fix from the backend, kept separate from the public [flights]/[maritime] flows
+    // (which the animation ticker below overwrites every second with a dead-reckoned position)
+    // so each tick always extrapolates from the true last poll rather than from its own output.
+    private var rawFlights: List<FlightMarker> = emptyList()
+    private var flightsPolledAtMs = 0L
+    private var rawMaritime = MaritimeResponse()
+    private var maritimePolledAtMs = 0L
+
+    // Local notifications: never fire on a layer's first successful poll (that's just the
+    // current state, not a new event) — only when something changes on a later one. See
+    // AlertNotifier.
+    private var earthquakeAlertsBaseline = false
+    private val seenEarthquakeIds = mutableSetOf<String>()
+    private var conflictAlertsBaseline = false
+    private val lastConflictSeverity = mutableMapOf<String, String>()
 
     init {
         viewModelScope.launch {
@@ -130,7 +151,12 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             _layerToggles.value.forEach { (layer, enabled) ->
                 if (enabled) {
                     startPolling(layer)
-                    if (layer == MapLayer.CYBER_ATTACKS) startCyberAttackPulseAnimation()
+                    when (layer) {
+                        MapLayer.CYBER_ATTACKS -> startCyberAttackPulseAnimation()
+                        MapLayer.FLIGHTS -> startFlightsAnimation()
+                        MapLayer.MARITIME -> startMaritimeAnimation()
+                        else -> Unit
+                    }
                 }
             }
         }
@@ -139,12 +165,12 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     /** Fills every layer with whatever was cached last session, before polling starts, so a
      * fresh network fetch never gets clobbered by a slower cache read landing after it. */
     private suspend fun loadCachedData() {
-        layerCache.loadFlights()?.let { flights.value = it }
+        layerCache.loadFlights()?.let { rawFlights = it; flightsPolledAtMs = System.currentTimeMillis(); flights.value = it }
         layerCache.loadEarthquakes()?.let { earthquakes.value = it }
         layerCache.loadFires()?.let { fires.value = it }
         layerCache.loadWeather()?.let { weatherEvents.value = it }
         layerCache.loadConflicts()?.let { conflictZones.value = it }
-        layerCache.loadMaritime()?.let { maritime.value = it }
+        layerCache.loadMaritime()?.let { rawMaritime = it; maritimePolledAtMs = System.currentTimeMillis(); maritime.value = it }
         layerCache.loadSatellites()?.let { satellites.value = it }
         layerCache.loadNews()?.let { newsFeeds.value = it }
         layerCache.loadCyberAttacks()?.let { cyberAttacks.value = it }
@@ -157,13 +183,75 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         _layerToggles.update { it + (layer to nowEnabled) }
         if (nowEnabled) {
             startPolling(layer)
-            if (layer == MapLayer.CYBER_ATTACKS) startCyberAttackPulseAnimation()
+            when (layer) {
+                MapLayer.CYBER_ATTACKS -> startCyberAttackPulseAnimation()
+                MapLayer.FLIGHTS -> startFlightsAnimation()
+                MapLayer.MARITIME -> startMaritimeAnimation()
+                else -> Unit
+            }
         } else {
             pollingJobs.remove(layer)?.cancel()
-            if (layer == MapLayer.CYBER_ATTACKS) {
-                pulseJob?.cancel()
-                pulseJob = null
-                cyberAttackPulses.value = emptyList()
+            when (layer) {
+                MapLayer.CYBER_ATTACKS -> {
+                    pulseJob?.cancel()
+                    pulseJob = null
+                    cyberAttackPulses.value = emptyList()
+                }
+                MapLayer.FLIGHTS -> {
+                    flightsAnimJob?.cancel()
+                    flightsAnimJob = null
+                }
+                MapLayer.MARITIME -> {
+                    maritimeAnimJob?.cancel()
+                    maritimeAnimJob = null
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    /** Flights only get a fresh fix every poll (60s), which reads as teleporting — dead-reckon
+     * the marker forward from its last real fix using heading+speed every second instead, reset
+     * to the true position whenever [fetch] lands a new one. See [DeadReckoning]. */
+    private fun startFlightsAnimation() {
+        flightsAnimJob?.cancel()
+        flightsAnimJob = viewModelScope.launch {
+            while (isActive) {
+                val elapsed = System.currentTimeMillis() - flightsPolledAtMs
+                flights.value = rawFlights.map { marker ->
+                    val heading = marker.flight.heading
+                    val speed = marker.flight.speedKnots
+                    if (heading == null || speed == null) {
+                        marker
+                    } else {
+                        val (lat, lng) = DeadReckoning.project(marker.flight.lat, marker.flight.lng, heading, speed, elapsed)
+                        marker.copy(flight = marker.flight.copy(lat = lat, lng = lng))
+                    }
+                }
+                delay(1000L)
+            }
+        }
+    }
+
+    /** Same dead-reckoning treatment as flights, applied to AIS ships only — ports/chokepoints
+     * are static so [rawMaritime] is copied through unchanged for those. */
+    private fun startMaritimeAnimation() {
+        maritimeAnimJob?.cancel()
+        maritimeAnimJob = viewModelScope.launch {
+            while (isActive) {
+                val elapsed = System.currentTimeMillis() - maritimePolledAtMs
+                val ships = rawMaritime.ships.map { ship ->
+                    val heading = ship.heading
+                    val speed = ship.speed
+                    if (heading == null || speed == null) {
+                        ship
+                    } else {
+                        val (lat, lng) = DeadReckoning.project(ship.lat, ship.lng, heading, speed, elapsed)
+                        ship.copy(lat = lat, lng = lng)
+                    }
+                }
+                maritime.value = rawMaritime.copy(ships = ships)
+                delay(1000L)
             }
         }
     }
@@ -199,19 +287,39 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                         .onSuccess { setError(layer, null) }
                         .onFailure { setError(layer, it.message ?: "Erreur réseau") }
                 }
-                delay(layer.pollIntervalMs)
+                // Read fresh every loop rather than once, so a cadence changed in Réglages takes
+                // effect on the next tick instead of requiring the layer to be toggled off/on.
+                delay(pollIntervalPreferences.intervalFlow(layer).first())
             }
         }
     }
 
     private suspend fun fetch(layer: MapLayer, baseUrl: String) {
         when (layer) {
-            MapLayer.FLIGHTS -> flightsRepo.fetch(baseUrl).also { flights.value = it; layerCache.saveFlights(it) }
-            MapLayer.EARTHQUAKES -> earthquakesRepo.fetch(baseUrl).also { earthquakes.value = it; layerCache.saveEarthquakes(it) }
+            MapLayer.FLIGHTS -> flightsRepo.fetch(baseUrl).also {
+                rawFlights = it
+                flightsPolledAtMs = System.currentTimeMillis()
+                flights.value = it
+                layerCache.saveFlights(it)
+            }
+            MapLayer.EARTHQUAKES -> earthquakesRepo.fetch(baseUrl).also {
+                earthquakes.value = it
+                layerCache.saveEarthquakes(it)
+                checkEarthquakeAlerts(it)
+            }
             MapLayer.FIRES -> firesRepo.fetch(baseUrl).also { fires.value = it; layerCache.saveFires(it) }
             MapLayer.WEATHER -> weatherRepo.fetch(baseUrl).also { weatherEvents.value = it; layerCache.saveWeather(it) }
-            MapLayer.CONFLICTS -> conflictsRepo.fetch(baseUrl).also { conflictZones.value = it; layerCache.saveConflicts(it) }
-            MapLayer.MARITIME -> maritimeRepo.fetch(baseUrl).also { maritime.value = it; layerCache.saveMaritime(it) }
+            MapLayer.CONFLICTS -> conflictsRepo.fetch(baseUrl).also {
+                conflictZones.value = it
+                layerCache.saveConflicts(it)
+                checkConflictAlerts(it)
+            }
+            MapLayer.MARITIME -> maritimeRepo.fetch(baseUrl).also {
+                rawMaritime = it
+                maritimePolledAtMs = System.currentTimeMillis()
+                maritime.value = it
+                layerCache.saveMaritime(it)
+            }
             MapLayer.SATELLITES -> satellitesRepo.fetch(baseUrl).also { satellites.value = it; layerCache.saveSatellites(it) }
             MapLayer.NEWS -> liveNewsRepo.fetch(baseUrl).also { newsFeeds.value = it; layerCache.saveNews(it) }
             MapLayer.CYBER_ATTACKS -> cyberAttacksRepo.fetch(baseUrl).also { cyberAttacks.value = it; layerCache.saveCyberAttacks(it) }
@@ -222,5 +330,43 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun setError(layer: MapLayer, message: String?) {
         _layerErrors.update { it + (layer to message) }
+    }
+
+    /** Notifies on any earthquake at or above [EARTHQUAKE_ALERT_MAGNITUDE] not already seen in a
+     * previous poll — skipped entirely on the first poll of a session, which is the current
+     * state rather than a batch of new events. */
+    private fun checkEarthquakeAlerts(quakes: List<Earthquake>) {
+        if (earthquakeAlertsBaseline) {
+            quakes.forEach { quake ->
+                val id = quake.id ?: return@forEach
+                if (id !in seenEarthquakeIds && (quake.magnitude ?: 0.0) >= EARTHQUAKE_ALERT_MAGNITUDE) {
+                    AlertNotifier.notifyEarthquake(getApplication(), quake)
+                }
+            }
+        } else {
+            earthquakeAlertsBaseline = true
+        }
+        seenEarthquakeIds += quakes.mapNotNull { it.id }
+    }
+
+    /** Notifies when a zone's severity crosses into [CONFLICT_ALERT_LEVELS] that it wasn't
+     * already at — same first-poll skip as [checkEarthquakeAlerts]. */
+    private fun checkConflictAlerts(zones: List<ConflictZone>) {
+        if (conflictAlertsBaseline) {
+            zones.forEach { zone ->
+                val previous = lastConflictSeverity[zone.id]
+                if (zone.severity in CONFLICT_ALERT_LEVELS && previous !in CONFLICT_ALERT_LEVELS) {
+                    AlertNotifier.notifyConflictEscalation(getApplication(), zone)
+                }
+            }
+        } else {
+            conflictAlertsBaseline = true
+        }
+        zones.forEach { lastConflictSeverity[it.id] = it.severity }
+    }
+
+    private companion object {
+        const val EARTHQUAKE_ALERT_MAGNITUDE = 6.0
+        val CONFLICT_ALERT_LEVELS = setOf("high", "war")
     }
 }

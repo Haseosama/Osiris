@@ -140,6 +140,84 @@ Au premier lancement, ouvre **Réglages** et renseigne l'URL de ton backend (ex.
       RasterSource MapLibre). Changer de style recrée le `LayersController` contre le nouveau
       `Style` ; comme tous les `LaunchedEffect` de couches sont indexés dessus, elles se
       redessinent automatiquement sur le nouveau fond de carte sans attendre le prochain poll
+- [x] **Fix flux CCTV vide (SkylineWebcams)** — `AsyncImage` avalait silencieusement les échecs
+      de chargement ; passage à `SubcomposeAsyncImage` avec des états Loading/Error/Success
+      explicites, ce qui a révélé la vraie cause : certaines sources (SkylineWebcams) exposent un
+      `feed_url` relatif au proxy du backend (`/api/cctv/proxy?url=...`), pas une URL absolue
+      comme TfL/Quebec 511. `CctvViewerDialog` résout désormais `feed_url`/`stream_url` contre
+      l'URL du backend configurée (déjà exposée par `MapViewModel.backendUrl`) avant de les
+      passer à Coil/ExoPlayer
+- [x] **Icône CCTV agrandie** — `iconSize` de la couche caméras passe de `0.45f` à `0.75f`
+      (à parité avec les vols) pour mieux ressortir parmi les autres pictogrammes
+- [x] **Vue satellite par défaut, bouton de recentrage, icône avion affinée** — `mapStyleMode`
+      démarre sur `SATELLITE` au lieu de `STREET` ; un `FloatingActionButton` (bas droite) relance
+      `centerOnUserLocation()` à la demande (redemande la permission si besoin) ; l'auto-centrage
+      au lancement se rabat sur `getCurrentLocation()` quand `lastLocation` est `null` (fréquent à
+      froid — l'app ne se recentrait alors jamais tant qu'aucun fix récent n'existait) ; l'icône
+      `ic_plane.xml` reprend le glyphe "flight" de Material Symbols (nez arrondi, empennage
+      distinct) plutôt que le losange précédent, un peu plus proche d'un avion réel
+- [x] **Clustering vols/satellites tenté puis annulé** — contrairement aux ~17k caméras CCTV, les
+      vols et satellites sont bien moins nombreux : le clustering (`GeoJsonOptions.withCluster`,
+      rayon 50px/maxZoom 13) les regroupait en une seule grosse bulle dès qu'on dézoomait un peu,
+      les rendant méconnaissables (et les satellites, plus denses par endroits, restaient
+      difficiles à voir même zoomé). Retour à des sources non clusterisées pour ces deux couches ;
+      `ensureClusteredSource`/`ensureClusterCircleLayers`/`clusterExpansionZoom` restent
+      disponibles et utilisés uniquement par CCTV, leur cas d'usage d'origine
+- [x] **Mouvement animé des vols/navires** — jusqu'ici seules les cyberattaques avaient une
+      animation fluide (`ArcMath`) ; vols (poll 60s) et navires (poll 20s) sautaient d'une
+      position à l'autre à chaque rafraîchissement. `DeadReckoning.project()` (nouveau, calcul
+      plat cap+vitesse en nœuds → déplacement lat/lng) extrapole chaque marqueur depuis sa
+      dernière position réelle toutes les secondes tant que la couche est active
+      (`startFlightsAnimation`/`startMaritimeAnimation` dans `MapViewModel`, même schéma
+      start/stop par toggle que `startCyberAttackPulseAnimation`) ; la position réelle du backend
+      reste la source de vérité (`rawFlights`/`rawMaritime`), le ticker ne fait qu'extrapoler
+      jusqu'au prochain poll qui recale tout
+- [x] **5 nouveaux outils RECON (Pseudo, Fuites de données, GitHub, Téléphone, Adresse MAC)** —
+      en vérifiant si le scanner réseau pouvait enfin avoir une vue dédiée (il ne peut pas : sa
+      route (`osiris-backend/src/app/api/scanner/route.ts`) ne fait que relayer telle quelle la
+      réponse d'un microservice externe privé dont le schéma n'est nulle part dans le code, donc
+      le JSON brut reste la seule option honnête), il s'est avéré que le backend expose une
+      douzaine de routes `api/osint/*` (bgp, github, hudsonrock, leaks, mac, phone, shodan,
+      sweep, threats, username…) dont seules la moitié étaient câblées côté Android. Les 5 au
+      schéma confirmé et stable (lu directement dans les `route.ts` correspondants) ont été
+      ajoutées avec vue dédiée, sur le même modèle que CVE/DNS/WHOIS : pseudo (énumération façon
+      Sherlock sur des dizaines de sites), fuites de données (email → breaches connues via
+      XposedOrNot), GitHub (profil + dépôts récents), téléphone (validité, opérateur, type de
+      ligne via libphonenumber), adresse MAC (fabricant). bgp/threats/hudsonrock/shodan/sweep
+      restent non câblés — schémas soit polymorphes (un champ peut être un nombre OU la chaîne
+      "N/A" selon le cas), soit non confirmés faute d'avoir lu tout le code source associé
+- [x] **Recherche sur la carte** — icône loupe dans la barre du haut ; recherche en direct (dès 2
+      caractères) parmi les vols (callsign), caméras CCTV (nom/ville), satellites, ports et
+      navires actuellement chargés en mémoire. Tap sur un résultat → la caméra survole sa position
+      (zoom 10) et ouvre la même fiche/dialogue qu'un tap direct sur la carte. La liste est
+      mémoïsée (`remember(searchQuery, flights, cctvCameras, satellites, maritime)`) pour ne pas
+      refiltrer les ~17k caméras CCTV à chaque tick de l'animation des vols (1×/s)
+- [x] **Alertes locales (séismes majeurs, escalade de conflit)** — `AlertNotifier` (nouveau,
+      `NotificationCompat`, canal `osiris_alerts` créé au démarrage dans `OsirisApplication`)
+      notifie pour tout séisme ≥ M6.0 jamais vu lors d'un poll précédent, et pour toute zone de
+      conflit dont la sévérité passe à `high`/`war` alors qu'elle ne l'était pas déjà.
+      `MapViewModel.checkEarthquakeAlerts`/`checkConflictAlerts` ignorent volontairement le tout
+      premier poll d'une session (c'est l'état courant, pas un lot de nouveaux événements) et ne
+      comparent qu'aux polls suivants. Demande la permission `POST_NOTIFICATIONS` au lancement
+      sur Android 13+ (obligatoire depuis Tiramisu ; avant, les notifications sont autorisées
+      sans prompt)
+- [x] **Cadence de polling réglable par couche** — jusqu'ici fixe par `MapLayer.pollIntervalMs`.
+      `PollIntervalPreferences` (DataStore, une clé par couche) stocke une surcharge optionnelle ;
+      `MapViewModel.startPolling` relit l'intervalle courant à chaque tour de boucle plutôt
+      qu'une fois au démarrage, donc un changement dans Réglages > Cadence de polling s'applique
+      au prochain cycle sans avoir à désactiver/réactiver la couche. Neuf paliers proposés (15s à
+      30 min) via un menu déroulant par couche dans l'écran Réglages
+- [x] **Premiers tests unitaires + CI** — le projet n'avait aucun test. Ajout de
+      `DeadReckoningTest`/`ArcMathTest` (`app/src/test/`) : ce sont les deux seuls bouts de code
+      purement mathématiques du projet (aucune dépendance Android), donc testables par JUnit
+      classique sans émulateur ni Robolectric — chaque valeur attendue est calculée à la main
+      dans le commentaire du test plutôt que recopiée depuis l'implémentation. Le reste du code
+      (ViewModels, repos, Compose) dépend du framework Android ou du réseau et demanderait
+      Robolectric/instrumentation — hors scope de cette passe. `.github/workflows/android-ci.yml`
+      (nouveau) fait tourner `testDebugUnitTest` puis `assembleDebug` sur chaque push/PR vers
+      `main` ; corrigé au passage le bit exécutable de `gradlew` (`git update-index --chmod=+x`,
+      manquant dans l'index comme ça l'avait été pour Romurbex — sans ça la CI échoue direct sur
+      les runners Linux)
 
 ## Licence
 

@@ -234,6 +234,84 @@ data class RiskFactor(
     val detail: String? = null,
 )
 
+@Serializable
+data class UsernameScanResult(
+    val username: String? = null,
+    val checked: Int = 0,
+    @SerialName("total_available") val totalAvailable: Int = 0,
+    val found: List<SiteHit> = emptyList(),
+    val inconclusive: List<SiteHit> = emptyList(),
+    val blocked: List<SiteHit> = emptyList(),
+    @SerialName("not_found_count") val notFoundCount: Int = 0,
+    val errors: List<SiteHit> = emptyList(),
+    @SerialName("elapsed_ms") val elapsedMs: Int = 0,
+    val error: String? = null,
+)
+
+@Serializable
+data class SiteHit(
+    val site: String? = null,
+    val url: String? = null,
+    val status: String? = null,
+)
+
+@Serializable
+data class LeaksResult(
+    val email: String? = null,
+    val breached: Boolean = false,
+    val breaches: List<String> = emptyList(),
+    @SerialName("data_exposed") val dataExposed: List<String> = emptyList(),
+    val error: String? = null,
+    val detail: String? = null,
+)
+
+@Serializable
+data class GithubResult(
+    val username: String? = null,
+    val name: String? = null,
+    val company: String? = null,
+    val blog: String? = null,
+    val location: String? = null,
+    val email: String? = null,
+    val bio: String? = null,
+    val twitter: String? = null,
+    @SerialName("public_repos") val publicRepos: Int? = null,
+    val followers: Int? = null,
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("recent_repos") val recentRepos: List<GithubRepo> = emptyList(),
+    val error: String? = null,
+)
+
+@Serializable
+data class GithubRepo(
+    val name: String? = null,
+    val language: String? = null,
+    val updated: String? = null,
+)
+
+@Serializable
+data class PhoneResult(
+    val query: String? = null,
+    val valid: Boolean = false,
+    val number: String? = null,
+    val international: String? = null,
+    val national: String? = null,
+    @SerialName("country_code") val countryCode: String? = null,
+    val region: String? = null,
+    @SerialName("line_type") val lineType: String? = null,
+    val error: String? = null,
+)
+
+@Serializable
+data class MacResult(
+    val mac: String? = null,
+    val vendor: String? = null,
+    val address: String? = null,
+    val prefix: String? = null,
+    val error: String? = null,
+    val detail: String? = null,
+)
+
 /** What [ReconScreen] renders — a typed view for the tools above, an indented JSON tree for
  * everything else (still structured, just not locked into a DTO). */
 sealed interface ReconResult {
@@ -243,5 +321,10 @@ sealed interface ReconResult {
     data class Sanctions(val data: SanctionsResult) : ReconResult
     data class Whois(val data: WhoisResult) : ReconResult
     data class CryptoWallet(val data: CryptoWalletResult) : ReconResult
+    data class Username(val data: UsernameScanResult) : ReconResult
+    data class Leaks(val data: LeaksResult) : ReconResult
+    data class Github(val data: GithubResult) : ReconResult
+    data class Phone(val data: PhoneResult) : ReconResult
+    data class Mac(val data: MacResult) : ReconResult
     data class Raw(val json: String) : ReconResult
 }

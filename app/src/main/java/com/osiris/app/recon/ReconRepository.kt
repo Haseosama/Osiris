@@ -53,6 +53,11 @@ class ReconRepository {
         ReconTool.SANCTIONS -> decodeOrRaw(body) { ReconResult.Sanctions(json.decodeFromString(body)) }
         ReconTool.WHOIS -> decodeOrRaw(body) { ReconResult.Whois(json.decodeFromString(body)) }
         ReconTool.CRYPTO_WALLET -> decodeOrRaw(body) { ReconResult.CryptoWallet(json.decodeFromString(body)) }
+        ReconTool.USERNAME -> decodeOrRaw(body) { ReconResult.Username(json.decodeFromString(body)) }
+        ReconTool.LEAKS -> decodeOrRaw(body) { ReconResult.Leaks(json.decodeFromString(body)) }
+        ReconTool.GITHUB -> decodeOrRaw(body) { ReconResult.Github(json.decodeFromString(body)) }
+        ReconTool.PHONE -> decodeOrRaw(body) { ReconResult.Phone(json.decodeFromString(body)) }
+        ReconTool.MAC -> decodeOrRaw(body) { ReconResult.Mac(json.decodeFromString(body)) }
         else -> ReconResult.Raw(prettyPrint(body))
     }
 

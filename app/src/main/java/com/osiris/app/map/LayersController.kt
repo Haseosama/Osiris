@@ -370,11 +370,8 @@ class LayersController(private val style: Style, private val context: Context) {
         )
     }
 
-    /**
-     * ~17k points in one source, so this uses MapLibre's built-in clustering instead of the
-     * flat [ensureCircleLayer] helper: a "clusters" circle layer sized by point_count, a text
-     * layer with the count, and an "unclustered" layer for individual cameras once zoomed in.
-     */
+    /** ~17k cameras in one source — clustered via [ensureClusteredSource]/[ensureClusterCircleLayers]
+     * so nearby cameras collapse into a count bubble until zoomed in enough to split apart. */
     fun setCctv(cameras: List<CctvCamera>) {
         ensureImage("cctv-camera", R.drawable.ic_camera, CCTV_COLOR)
 
@@ -386,62 +383,15 @@ class LayersController(private val style: Style, private val context: Context) {
                 cam.streamUrl?.let { addStringProperty("streamUrl", it) }
             }
         }
-        val collection = FeatureCollection.fromFeatures(features)
-        val existingSource = style.getSource("cctv-source") as? GeoJsonSource
-        if (existingSource != null) {
-            existingSource.setGeoJson(collection)
-        } else {
-            val options = GeoJsonOptions()
-                .withCluster(true)
-                .withClusterMaxZoom(13)
-                .withClusterRadius(50)
-            style.addSource(GeoJsonSource("cctv-source", collection, options))
-        }
-
-        if (style.getLayer("cctv-clusters") == null) {
-            val clusters = CircleLayer("cctv-clusters", "cctv-source").withProperties(
-                PropertyFactory.circleColor(CCTV_COLOR),
-                PropertyFactory.circleRadius(
-                    Expression.step(
-                        Expression.toNumber(Expression.get("point_count")),
-                        Expression.literal(14f),
-                        Expression.stop(50, Expression.literal(18f)),
-                        Expression.stop(500, Expression.literal(24f)),
-                    )
-                ),
-                PropertyFactory.circleOpacity(0.75f),
-            )
-            clusters.setFilter(Expression.has("point_count"))
-            style.addLayer(clusters)
-        }
-        if (style.getLayer("cctv-cluster-count") == null) {
-            val counts = SymbolLayer("cctv-cluster-count", "cctv-source").withProperties(
-                PropertyFactory.textField(Expression.toString(Expression.get("point_count"))),
-                PropertyFactory.textSize(12f),
-                PropertyFactory.textColor(android.graphics.Color.WHITE),
-                PropertyFactory.textIgnorePlacement(true),
-                PropertyFactory.textAllowOverlap(true),
-            )
-            counts.setFilter(Expression.has("point_count"))
-            style.addLayer(counts)
-        }
-        if (style.getLayer("cctv-unclustered") == null) {
-            val points = SymbolLayer("cctv-unclustered", "cctv-source").withProperties(
-                PropertyFactory.iconImage("cctv-camera"),
-                PropertyFactory.iconSize(0.45f),
-                PropertyFactory.iconAllowOverlap(true),
-                PropertyFactory.iconIgnorePlacement(true),
-            )
-            points.setFilter(Expression.not(Expression.has("point_count")))
-            style.addLayer(points)
-        }
-    }
-
-    /** Zoom level at which tapping this CCTV cluster feature would split it apart, or null if
-     * the source isn't ready yet or the feature isn't actually a cluster. */
-    fun cctvClusterExpansionZoom(feature: Feature): Int? {
-        val source = style.getSource("cctv-source") as? GeoJsonSource ?: return null
-        return runCatching { source.getClusterExpansionZoom(feature) }.getOrNull()
+        ensureClusteredSource("cctv-source", features)
+        ensureClusterCircleLayers("cctv-source", "cctv-clusters", "cctv-cluster-count", CCTV_COLOR)
+        ensureSymbolLayer(
+            layerId = "cctv-unclustered",
+            sourceId = "cctv-source",
+            iconImage = PropertyFactory.iconImage("cctv-camera"),
+            iconSize = 0.75f,
+            filter = Expression.not(Expression.has("point_count")),
+        )
     }
 
     fun setOsintPosts(posts: List<OsintPost>) {
@@ -534,6 +484,7 @@ class LayersController(private val style: Style, private val context: Context) {
         iconImage: PropertyValue<*>,
         iconSize: Float,
         iconRotate: PropertyValue<*>? = null,
+        filter: Expression? = null,
     ) {
         if (style.getLayer(layerId) != null) return
         val properties = buildList {
@@ -545,7 +496,62 @@ class LayersController(private val style: Style, private val context: Context) {
             iconRotate?.let { add(it) }
         }
         val layer = SymbolLayer(layerId, sourceId).withProperties(*properties.toTypedArray())
+        filter?.let { layer.setFilter(it) }
         style.addLayer(layer)
+    }
+
+    /** Same clustering strategy as [setCctv] originally introduced (supercluster via MapLibre's
+     * built-in `GeoJsonOptions.withCluster`) — extracted once it was needed for a third dense
+     * layer (flights, satellites) so all three share identical cluster-circle/count styling. */
+    private fun ensureClusteredSource(sourceId: String, features: List<Feature>) {
+        val collection = FeatureCollection.fromFeatures(features)
+        val existing = style.getSource(sourceId) as? GeoJsonSource
+        if (existing != null) {
+            existing.setGeoJson(collection)
+        } else {
+            val options = GeoJsonOptions()
+                .withCluster(true)
+                .withClusterMaxZoom(13)
+                .withClusterRadius(50)
+            style.addSource(GeoJsonSource(sourceId, collection, options))
+        }
+    }
+
+    private fun ensureClusterCircleLayers(sourceId: String, clustersLayerId: String, countLayerId: String, dotColor: Int) {
+        if (style.getLayer(clustersLayerId) == null) {
+            val clusters = CircleLayer(clustersLayerId, sourceId).withProperties(
+                PropertyFactory.circleColor(dotColor),
+                PropertyFactory.circleRadius(
+                    Expression.step(
+                        Expression.toNumber(Expression.get("point_count")),
+                        Expression.literal(14f),
+                        Expression.stop(50, Expression.literal(18f)),
+                        Expression.stop(500, Expression.literal(24f)),
+                    )
+                ),
+                PropertyFactory.circleOpacity(0.75f),
+            )
+            clusters.setFilter(Expression.has("point_count"))
+            style.addLayer(clusters)
+        }
+        if (style.getLayer(countLayerId) == null) {
+            val counts = SymbolLayer(countLayerId, sourceId).withProperties(
+                PropertyFactory.textField(Expression.toString(Expression.get("point_count"))),
+                PropertyFactory.textSize(12f),
+                PropertyFactory.textColor(android.graphics.Color.WHITE),
+                PropertyFactory.textIgnorePlacement(true),
+                PropertyFactory.textAllowOverlap(true),
+            )
+            counts.setFilter(Expression.has("point_count"))
+            style.addLayer(counts)
+        }
+    }
+
+    /** Zoom level at which tapping this cluster feature (from any clustered [sourceId]) would
+     * split it apart, or null if the source isn't ready yet or the feature isn't a cluster. */
+    fun clusterExpansionZoom(sourceId: String, feature: Feature): Int? {
+        val source = style.getSource(sourceId) as? GeoJsonSource ?: return null
+        return runCatching { source.getClusterExpansionZoom(feature) }.getOrNull()
     }
 
     private inline fun feature(lng: Double, lat: Double, block: Feature.() -> Unit): Feature =

@@ -127,6 +127,11 @@ private fun ReconResultView(result: ReconResult, modifier: Modifier = Modifier) 
         is ReconResult.Sanctions -> SanctionsResultView(result.data, modifier)
         is ReconResult.Whois -> WhoisResultView(result.data, modifier)
         is ReconResult.CryptoWallet -> CryptoWalletResultView(result.data, modifier)
+        is ReconResult.Username -> UsernameResultView(result.data, modifier)
+        is ReconResult.Leaks -> LeaksResultView(result.data, modifier)
+        is ReconResult.Github -> GithubResultView(result.data, modifier)
+        is ReconResult.Phone -> PhoneResultView(result.data, modifier)
+        is ReconResult.Mac -> MacResultView(result.data, modifier)
         is ReconResult.Raw -> JsonTreeView(result.json, modifier)
     }
 }
@@ -355,6 +360,124 @@ private fun CryptoWalletResultView(data: CryptoWalletResult, modifier: Modifier 
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun UsernameResultView(data: UsernameScanResult, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (data.error != null) {
+            Text(data.error, color = MaterialTheme.colorScheme.error)
+        } else {
+            Text(data.username ?: "", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "${data.found.size} trouvé(s) sur ${data.checked} site(s) vérifiés",
+                style = MaterialTheme.typography.labelMedium,
+                color = if (data.found.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (data.found.isNotEmpty()) {
+                SectionTitle("Comptes trouvés")
+                data.found.forEach { hit -> LabeledLine(hit.site ?: "?", hit.url.orEmpty()) }
+            }
+            if (data.inconclusive.isNotEmpty()) {
+                SectionTitle("Non concluant (${data.inconclusive.size})")
+                Text(data.inconclusive.joinToString { it.site ?: "?" }, style = MaterialTheme.typography.bodySmall)
+            }
+            if (data.blocked.isNotEmpty()) {
+                SectionTitle("Site bloqué la vérification (${data.blocked.size})")
+                Text(data.blocked.joinToString { it.site ?: "?" }, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LeaksResultView(data: LeaksResult, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (data.error != null) {
+            Text(data.error, color = MaterialTheme.colorScheme.error)
+        } else {
+            Text(data.email ?: "", style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (data.breached) "⚠ Présent dans ${data.breaches.size} fuite(s)" else "Aucune fuite connue",
+                style = MaterialTheme.typography.labelMedium,
+                color = if (data.breached) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (data.breaches.isNotEmpty()) {
+                SectionTitle("Sites concernés")
+                Text(data.breaches.joinToString(), style = MaterialTheme.typography.bodySmall)
+            }
+            if (data.dataExposed.isNotEmpty()) {
+                SectionTitle("Données exposées")
+                Text(data.dataExposed.joinToString(), style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+@Composable
+private fun GithubResultView(data: GithubResult, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (data.error != null) {
+            Text(data.error, color = MaterialTheme.colorScheme.error)
+        } else {
+            Text(data.name ?: data.username ?: "", style = MaterialTheme.typography.titleMedium)
+            data.bio?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+            LabeledLine("Entreprise", data.company.orEmpty())
+            LabeledLine("Localisation", data.location.orEmpty())
+            LabeledLine("Blog", data.blog.orEmpty())
+            LabeledLine("Email public", data.email.orEmpty())
+            LabeledLine("Twitter", data.twitter.orEmpty())
+            Text(
+                "${data.publicRepos ?: 0} dépôts publics · ${data.followers ?: 0} followers",
+                style = MaterialTheme.typography.labelMedium,
+            )
+            LabeledLine("Compte créé le", data.createdAt.orEmpty())
+            if (data.recentRepos.isNotEmpty()) {
+                SectionTitle("Dépôts récents")
+                data.recentRepos.forEach { repo ->
+                    Text(
+                        listOfNotNull(repo.name, repo.language).joinToString(" — "),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PhoneResultView(data: PhoneResult, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (data.error != null) {
+            Text(data.error, color = MaterialTheme.colorScheme.error)
+        } else {
+            Text(data.international ?: data.number ?: "", style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (data.valid) "Numéro valide" else "Numéro invalide",
+                style = MaterialTheme.typography.labelMedium,
+                color = if (data.valid) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+            )
+            LabeledLine("National", data.national.orEmpty())
+            LabeledLine("Indicatif", data.countryCode.orEmpty())
+            LabeledLine("Région", data.region.orEmpty())
+            LabeledLine("Type de ligne", data.lineType.orEmpty())
+        }
+    }
+}
+
+@Composable
+private fun MacResultView(data: MacResult, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (data.error != null) {
+            Text(data.error, color = MaterialTheme.colorScheme.error)
+        } else {
+            Text(data.mac ?: "", style = MaterialTheme.typography.titleMedium, fontFamily = FontFamily.Monospace)
+            LabeledLine("Fabricant", data.vendor.orEmpty())
+            LabeledLine("Adresse", data.address.orEmpty())
+            LabeledLine("Préfixe", data.prefix.orEmpty())
         }
     }
 }

@@ -51,7 +51,7 @@ private const val SNAPSHOT_REFRESH_MS = 3000L
  * that refresh loop *is* the live view for them.
  */
 @Composable
-fun CctvViewerDialog(camera: CctvCamera, onDismiss: () -> Unit) {
+fun CctvViewerDialog(camera: CctvCamera, backendUrl: String, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface) {
             Column(
@@ -71,8 +71,8 @@ fun CctvViewerDialog(camera: CctvCamera, onDismiss: () -> Unit) {
                 }
                 Spacer(Modifier.height(12.dp))
 
-                val streamUrl = camera.streamUrl
-                val feedUrl = camera.feedUrl
+                val streamUrl = camera.streamUrl?.let { resolveUrl(it, backendUrl) }
+                val feedUrl = camera.feedUrl?.let { resolveUrl(it, backendUrl) }
                 when {
                     streamUrl != null -> CctvVideoStream(streamUrl)
                     feedUrl != null -> CctvLiveSnapshot(feedUrl, camera.name)
@@ -152,4 +152,22 @@ private fun CctvLiveSnapshot(feedUrl: String, cameraName: String?) {
 private fun cacheBust(url: String): String {
     val separator = if (url.contains('?')) '&' else '?'
     return "$url${separator}t=${System.currentTimeMillis()}"
+}
+
+/**
+ * Some Osiris CCTV sources (e.g. SkylineWebcams) expose a [CctvCamera.feedUrl] that's actually
+ * a relative path into the backend's own proxy (`/api/cctv/proxy?url=...`), not an absolute
+ * URL — unlike direct sources (TfL, Quebec 511...). Prepend the configured backend base URL so
+ * Coil/ExoPlayer get something resolvable instead of treating it as a local file path.
+ */
+private fun resolveUrl(url: String, backendUrl: String): String {
+    if (!url.startsWith("/")) return url
+    val trimmed = backendUrl.trim().trimEnd('/')
+    if (trimmed.isEmpty()) return url
+    val withScheme = if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+        trimmed
+    } else {
+        "https://$trimmed"
+    }
+    return "$withScheme$url"
 }

@@ -34,4 +34,9 @@ enum class ReconTool(
     CVE("CVE", "api/osint/cve", "cve", "CVE-2024-12345"),
     CRYPTO_WALLET("Wallet crypto", "api/osint/crypto", "address", "Adresse BTC / ETH / SOL"),
     SANCTIONS("Sanctions OFAC", "api/osint/sanctions", "query", "Nom, organisation, navire… (4+ car.)"),
+    USERNAME("Pseudo", "api/osint/username", "username", "Pseudo à rechercher (ex: johndoe)"),
+    LEAKS("Fuites de données", "api/osint/leaks", "email", "Adresse email"),
+    GITHUB("GitHub", "api/osint/github", "user", "Nom d'utilisateur GitHub"),
+    PHONE("Téléphone", "api/osint/phone", "number", "Numéro (ex: +33612345678)"),
+    MAC("Adresse MAC", "api/osint/mac", "mac", "Adresse MAC (ex: AC:DE:48:00:11:22)"),
 }
