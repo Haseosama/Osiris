@@ -16,6 +16,7 @@ import com.osiris.app.map.MapLayer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.serializer
 import java.io.File
 
 /**
@@ -63,15 +64,24 @@ class LayerCache(context: Context) {
     suspend fun saveOsint(data: List<OsintPost>) = save(MapLayer.OSINT, data)
     suspend fun loadOsint(): List<OsintPost>? = load(MapLayer.OSINT)
 
-    private suspend inline fun <reified T> save(layer: MapLayer, data: T) = withContext(Dispatchers.IO) {
-        runCatching { fileFor(layer).writeText(json.encodeToString(data)) }
+    private suspend inline fun <reified T> save(layer: MapLayer, data: T): Result<Unit> {
+        // Resolved here, not inside withContext's lambda: that lambda is passed to a
+        // non-inline function, so it never actually gets inlined into this call site —
+        // and reified T only survives in code that is.
+        val serializer = serializer<T>()
+        return withContext(Dispatchers.IO) {
+            runCatching { fileFor(layer).writeText(json.encodeToString(serializer, data)) }
+        }
     }
 
-    private suspend inline fun <reified T> load(layer: MapLayer): T? = withContext(Dispatchers.IO) {
-        runCatching {
-            val file = fileFor(layer)
-            if (!file.exists()) null else json.decodeFromString<T>(file.readText())
-        }.getOrNull()
+    private suspend inline fun <reified T> load(layer: MapLayer): T? {
+        val serializer = serializer<T>()
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val file = fileFor(layer)
+                if (!file.exists()) null else json.decodeFromString(serializer, file.readText())
+            }.getOrNull()
+        }
     }
 
     private fun fileFor(layer: MapLayer): File = File(cacheDir, "${layer.name}.json")
