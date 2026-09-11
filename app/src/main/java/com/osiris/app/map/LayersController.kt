@@ -62,8 +62,9 @@ private val CCTV_COLOR = "#00E5FF".toColorInt()
 class LayersController(private val style: Style) {
 
     fun setFlights(markers: List<FlightMarker>) {
-        val features = markers.map { marker ->
+        val features = markers.mapIndexed { index, marker ->
             feature(marker.flight.lng, marker.flight.lat) {
+                addNumberProperty("idx", index)
                 addStringProperty("category", marker.category.name)
                 marker.flight.callsign?.let { addStringProperty("callsign", it) }
             }
@@ -87,8 +88,9 @@ class LayersController(private val style: Style) {
     }
 
     fun setEarthquakes(earthquakes: List<Earthquake>) {
-        val features = earthquakes.map { quake ->
+        val features = earthquakes.mapIndexed { index, quake ->
             feature(quake.lng, quake.lat) {
+                addNumberProperty("idx", index)
                 quake.magnitude?.let { addNumberProperty("magnitude", it) }
                 quake.place?.let { addStringProperty("place", it) }
             }
@@ -110,8 +112,9 @@ class LayersController(private val style: Style) {
     }
 
     fun setFires(fires: List<FireEvent>) {
-        val features = fires.map { fire ->
+        val features = fires.mapIndexed { index, fire ->
             feature(fire.lng, fire.lat) {
+                addNumberProperty("idx", index)
                 fire.title?.let { addStringProperty("title", it) }
             }
         }
@@ -125,8 +128,9 @@ class LayersController(private val style: Style) {
     }
 
     fun setWeatherEvents(events: List<WeatherEvent>) {
-        val features = events.map { event ->
+        val features = events.mapIndexed { index, event ->
             feature(event.lng, event.lat) {
+                addNumberProperty("idx", index)
                 event.title?.let { addStringProperty("title", it) }
                 addStringProperty("severity", event.severity ?: "low")
             }
@@ -149,8 +153,9 @@ class LayersController(private val style: Style) {
     }
 
     fun setConflictZones(zones: List<ConflictZone>) {
-        val features = zones.map { zone ->
+        val features = zones.mapIndexed { index, zone ->
             feature(zone.lng, zone.lat) {
+                addNumberProperty("idx", index)
                 addStringProperty("label", zone.label)
                 addStringProperty("severity", zone.severity)
             }
@@ -174,8 +179,9 @@ class LayersController(private val style: Style) {
     }
 
     fun setMaritime(maritime: MaritimeResponse) {
-        val portFeatures = maritime.ports.map { port ->
+        val portFeatures = maritime.ports.mapIndexed { index, port ->
             feature(port.lng, port.lat) {
+                addNumberProperty("idx", index)
                 addStringProperty("name", port.name)
                 addStringProperty("type", port.type)
             }
@@ -196,8 +202,9 @@ class LayersController(private val style: Style) {
             radius = PropertyFactory.circleRadius(5f),
         )
 
-        val chokepointFeatures = maritime.chokepoints.map { choke ->
+        val chokepointFeatures = maritime.chokepoints.mapIndexed { index, choke ->
             feature(choke.lng, choke.lat) {
+                addNumberProperty("idx", index)
                 addStringProperty("name", choke.name)
                 addStringProperty("risk", choke.risk)
             }
@@ -220,8 +227,9 @@ class LayersController(private val style: Style) {
             radius = PropertyFactory.circleRadius(9f),
         )
 
-        val shipFeatures = maritime.ships.map { ship ->
+        val shipFeatures = maritime.ships.mapIndexed { index, ship ->
             feature(ship.lng, ship.lat) {
+                addNumberProperty("idx", index)
                 ship.name?.let { addStringProperty("name", it) }
                 ship.type?.let { addStringProperty("type", it) }
             }
@@ -236,8 +244,9 @@ class LayersController(private val style: Style) {
     }
 
     fun setSatellites(satellites: List<Satellite>) {
-        val features = satellites.map { sat ->
+        val features = satellites.mapIndexed { index, sat ->
             feature(sat.lng, sat.lat) {
+                addNumberProperty("idx", index)
                 addStringProperty("name", sat.name)
                 addStringProperty("category", sat.category ?: "other")
                 sat.mission?.let { addStringProperty("mission", it) }

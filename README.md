@@ -110,6 +110,13 @@ Au premier lancement, ouvre **Réglages** et renseigne l'URL de ton backend (ex.
       - Icône d'appli retravaillée (double anneau radar + points de contact colorés)
       - `LayerCache` purge maintenant les fichiers de plus de 24h au lieu de les servir
         indéfiniment (basé sur `File.lastModified()`, pas d'horodatage dans le JSON)
+- [x] **Fiches d'info par entité** — vols, séismes, incendies, météo, zones de conflit, ports,
+      points de passage, navires et satellites sont désormais tapables comme CCTV/OSINT/actu
+      l'étaient déjà. Chaque feature GeoJSON porte une propriété `idx` (position dans la liste
+      de la couche au moment du rendu) ; au tap, `MapScreen` relit cette liste au même index et
+      construit un `InfoDialogContent` (titre/sous-titre/lignes) via une fonction d'extension
+      par type de modèle (`FlightMarker.toInfoDialog()`, etc.), affiché par un unique
+      `EntityInfoDialog` réutilisable plutôt que neuf boîtes de dialogue quasi identiques
 
 ## Licence
 

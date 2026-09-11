@@ -81,6 +81,7 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
     val selectedNewsFeed by viewModel.selectedNewsFeed.collectAsStateWithLifecycle()
     val selectedCctvCamera by viewModel.selectedCctvCamera.collectAsStateWithLifecycle()
     val selectedOsintPost by viewModel.selectedOsintPost.collectAsStateWithLifecycle()
+    val selectedInfo by viewModel.selectedInfo.collectAsStateWithLifecycle()
 
     val mapView = remember { MapView(context).apply { onCreate(null) } }
     var maplibreMap by remember { mutableStateOf<MapLibreMap?>(null) }
@@ -149,8 +150,19 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
 
     LaunchedEffect(maplibreMap) {
         val map = maplibreMap ?: return@LaunchedEffect
+
         map.addOnMapClickListener { latLng ->
             val screenPoint = map.projection.toScreenLocation(latLng)
+
+            /** Looks up the tapped feature's `idx` property (see LayersController) in [items]
+             * and, if found, shows its info dialog. True if this layer consumed the tap. */
+            fun <T> handleInfoTap(layerId: String, items: List<T>, toInfo: (T) -> InfoDialogContent): Boolean {
+                val idx = map.queryRenderedFeatures(screenPoint, layerId).firstOrNull()
+                    ?.getNumberProperty("idx")?.toInt() ?: return false
+                val item = items.getOrNull(idx) ?: return false
+                viewModel.selectInfo(toInfo(item))
+                return true
+            }
 
             val newsId = map.queryRenderedFeatures(screenPoint, "news-layer").firstOrNull()
                 ?.getStringProperty("id")
@@ -163,6 +175,16 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
                 }
                 return@addOnMapClickListener true
             }
+
+            if (handleInfoTap("flights-layer", flights) { it.toInfoDialog() }) return@addOnMapClickListener true
+            if (handleInfoTap("earthquakes-layer", earthquakes) { it.toInfoDialog() }) return@addOnMapClickListener true
+            if (handleInfoTap("fires-layer", fires) { it.toInfoDialog() }) return@addOnMapClickListener true
+            if (handleInfoTap("weather-layer", weatherEvents) { it.toInfoDialog() }) return@addOnMapClickListener true
+            if (handleInfoTap("conflicts-layer", conflictZones) { it.toInfoDialog() }) return@addOnMapClickListener true
+            if (handleInfoTap("ports-layer", maritime.ports) { it.toInfoDialog() }) return@addOnMapClickListener true
+            if (handleInfoTap("chokepoints-layer", maritime.chokepoints) { it.toInfoDialog() }) return@addOnMapClickListener true
+            if (handleInfoTap("ships-layer", maritime.ships) { it.toInfoDialog() }) return@addOnMapClickListener true
+            if (handleInfoTap("satellites-layer", satellites) { it.toInfoDialog() }) return@addOnMapClickListener true
 
             val clusterFeature = map.queryRenderedFeatures(screenPoint, "cctv-clusters").firstOrNull()
             if (clusterFeature != null) {
@@ -201,6 +223,9 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
     }
     selectedOsintPost?.let { post ->
         OsintPostDialog(post = post, onDismiss = { viewModel.selectOsintPost(null) })
+    }
+    selectedInfo?.let { info ->
+        EntityInfoDialog(content = info, onDismiss = { viewModel.selectInfo(null) })
     }
 
     Box(modifier = Modifier.fillMaxSize()) {

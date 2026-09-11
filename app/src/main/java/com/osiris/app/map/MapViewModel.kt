@@ -112,6 +112,15 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         _selectedOsintPost.value = post
     }
 
+    private val _selectedInfo = MutableStateFlow<InfoDialogContent?>(null)
+    val selectedInfo: StateFlow<InfoDialogContent?> = _selectedInfo.asStateFlow()
+
+    /** Shared by flights/earthquakes/fires/weather/conflicts/maritime/satellites — see
+     * [InfoDialogContent]. News/CCTV/OSINT keep their own selectX functions above. */
+    fun selectInfo(content: InfoDialogContent?) {
+        _selectedInfo.value = content
+    }
+
     private val pollingJobs = mutableMapOf<MapLayer, Job>()
     private var pulseJob: Job? = null
 
