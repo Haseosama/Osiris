@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -57,7 +58,7 @@ private const val DEFAULT_STYLE_URL = "https://demotiles.maplibre.org/style.json
 private val DEFAULT_CAMERA = CameraPosition.Builder().target(LatLng(20.0, 0.0)).zoom(1.5).build()
 
 @Composable
-fun MapScreen(onOpenSettings: () -> Unit, viewModel: MapViewModel = viewModel()) {
+fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: MapViewModel = viewModel()) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -210,12 +211,21 @@ fun MapScreen(onOpenSettings: () -> Unit, viewModel: MapViewModel = viewModel())
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.primary,
                 )
-                IconButton(onClick = onOpenSettings) {
-                    Icon(
-                        Icons.Filled.Settings,
-                        contentDescription = "Réglages",
-                        tint = MaterialTheme.colorScheme.onBackground,
-                    )
+                Row {
+                    IconButton(onClick = onOpenRecon) {
+                        Icon(
+                            Icons.Filled.Build,
+                            contentDescription = "RECON",
+                            tint = MaterialTheme.colorScheme.onBackground,
+                        )
+                    }
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(
+                            Icons.Filled.Settings,
+                            contentDescription = "Réglages",
+                            tint = MaterialTheme.colorScheme.onBackground,
+                        )
+                    }
                 }
             }
 

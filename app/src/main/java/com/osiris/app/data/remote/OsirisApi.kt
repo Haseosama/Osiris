@@ -14,6 +14,7 @@ import com.osiris.app.data.model.WeatherResponse
 import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.GET
+import retrofit2.http.Url
 
 /** REST surface of a self-hosted Osiris backend that this client actually consumes. */
 interface OsirisApi {
@@ -53,4 +54,9 @@ interface OsirisApi {
 
     @GET("api/news")
     suspend fun osintNews(): OsintResponse
+
+    /** Dynamic endpoint for the RECON toolkit (scanner, DNS, WHOIS, CVE, sanctions...) —
+     * each tool's query string differs too much to justify a typed method per tool. */
+    @GET
+    suspend fun raw(@Url relativeUrl: String): Response<ResponseBody>
 }
