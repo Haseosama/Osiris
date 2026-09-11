@@ -28,8 +28,10 @@ data class Flight(
     val squawk: String? = null,
 )
 
+@Serializable
 enum class FlightCategory { COMMERCIAL, PRIVATE, JET, MILITARY }
 
+@Serializable
 data class FlightMarker(val flight: Flight, val category: FlightCategory)
 
 fun FlightsResponse.toMarkers(): List<FlightMarker> =

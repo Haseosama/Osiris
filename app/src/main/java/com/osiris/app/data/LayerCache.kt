@@ -64,25 +64,27 @@ class LayerCache(context: Context) {
     suspend fun saveOsint(data: List<OsintPost>) = save(MapLayer.OSINT, data)
     suspend fun loadOsint(): List<OsintPost>? = load(MapLayer.OSINT)
 
-    private suspend inline fun <reified T> save(layer: MapLayer, data: T): Result<Unit> {
-        // Resolved here, not inside withContext's lambda: that lambda is passed to a
-        // non-inline function, so it never actually gets inlined into this call site —
-        // and reified T only survives in code that is.
+    // runCatching wraps the serializer<T>() resolution too (not just the file I/O): a model
+    // class missing @Serializable throws there, before withContext's lambda is even entered,
+    // and a launch-time crash on every cold start is a much worse failure mode than one
+    // layer silently starting without a cache. serializer<T>() itself must still be resolved
+    // here rather than inside withContext's lambda — that lambda is passed to a non-inline
+    // function, so it's never actually inlined into this call site, and reified T only
+    // survives in code that is.
+    private suspend inline fun <reified T> save(layer: MapLayer, data: T): Result<Unit> = runCatching {
         val serializer = serializer<T>()
-        return withContext(Dispatchers.IO) {
-            runCatching { fileFor(layer).writeText(json.encodeToString(serializer, data)) }
+        withContext(Dispatchers.IO) {
+            fileFor(layer).writeText(json.encodeToString(serializer, data))
         }
     }
 
-    private suspend inline fun <reified T> load(layer: MapLayer): T? {
+    private suspend inline fun <reified T> load(layer: MapLayer): T? = runCatching {
         val serializer = serializer<T>()
-        return withContext(Dispatchers.IO) {
-            runCatching {
-                val file = fileFor(layer)
-                if (!file.exists()) null else json.decodeFromString(serializer, file.readText())
-            }.getOrNull()
+        withContext(Dispatchers.IO) {
+            val file = fileFor(layer)
+            if (!file.exists()) null else json.decodeFromString(serializer, file.readText())
         }
-    }
+    }.getOrNull()
 
     private fun fileFor(layer: MapLayer): File = File(cacheDir, "${layer.name}.json")
 }
