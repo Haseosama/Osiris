@@ -588,6 +588,18 @@ Au premier lancement, ouvre **Réglages** et renseigne l'URL de ton backend (ex.
       délibérément décalé à un prochain lot : son CDN exige un en-tête `Referer` pour servir
       une image, que le chargeur Coil actuel ne sait pas envoyer — à traiter une fois pour
       toutes les sources concernées plutôt qu'au coup par coup
+- [x] **Vers zéro backend, phase 5.4 — CCTV, lot 2/N** — les cinq états américains sur la
+      plateforme IBI 511 (pagination DataTables, position en WKT) : **Floride** (FDOT,
+      ~4 950 caméras), **Géorgie** (GDOT, ~4 040), **Caroline du Nord** (NCDOT, ~1 140),
+      **Arizona** (ADOT, ~640) et **Louisiane** (LADOTD, ~336) — plus de 11 000 caméras au
+      total. `Ibi511` porte le loader partagé du backend (pagination par lots de 10 pages en
+      parallèle, une relance pour les pages en échec, un lot trop court renvoie une liste vide
+      plutôt qu'un résultat partiel trompeur puisque l'app n'a pas d'équivalent au cache de
+      secours du backend) ; la Louisiane réutilise seulement son analyseur WKT et son
+      générateur de requête, gardant sa propre logique de correspondance de champs (l'ordre de
+      sélection du nom diffère légèrement). La plupart de ces caméras diffusent en HLS plutôt
+      qu'en MP4 simple — dépendance `media3-exoplayer-hls` ajoutée, l'artefact `exoplayer` seul
+      ne sait pas lire un `.m3u8`. Neuf régions CCTV natives au total avec le lot 1
 
 ## Licence
 

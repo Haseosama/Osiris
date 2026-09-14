@@ -3,6 +3,7 @@ package com.osiris.app.data.repository
 import com.osiris.app.data.model.CctvCamera
 import com.osiris.app.data.remote.NetworkModule
 import com.osiris.app.data.source.cctv.NativeCctvSource
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 
@@ -13,7 +14,7 @@ import kotlinx.coroutines.coroutineScope
 class CctvRepository {
     suspend fun fetch(baseUrl: String): List<CctvCamera> = coroutineScope {
         val native = async { NativeCctvSource.fetch() }
-        val backend = if (baseUrl.isNotBlank()) {
+        val backend: Deferred<List<CctvCamera>>? = if (baseUrl.isNotBlank()) {
             async { runCatching { NetworkModule.apiFor(baseUrl).cctv().cameras }.getOrDefault(emptyList()) }
         } else {
             null

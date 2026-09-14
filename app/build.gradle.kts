@@ -109,6 +109,10 @@ dependencies {
     // (e.g. Quebec 511) instead of a periodically-refreshed JPEG snapshot.
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-ui:1.4.1")
+    // HLS (.m3u8) playback — several native CCTV sources (Florida, Georgia, North Carolina,
+    // Louisiana) serve their video feed as an HLS playlist rather than a plain MP4; the core
+    // exoplayer artifact alone doesn't include the HLS extractor.
+    implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
 
     // Home screen widget — Compose-based (Glance) rather than classic RemoteViews/XML, to stay
     // consistent with the rest of the UI instead of introducing a second layout system.
