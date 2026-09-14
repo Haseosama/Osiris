@@ -96,6 +96,10 @@ dependencies {
     // consistent with the rest of the UI instead of introducing a second layout system.
     implementation("androidx.glance:glance-appwidget:1.2.0")
 
+    // RECON "Téléphone" tool — same library the backend used server-side
+    // (google-libphonenumber), now parsing on-device instead of proxying the lookup.
+    implementation("com.googlecode.libphonenumber:libphonenumber:8.13.51")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 

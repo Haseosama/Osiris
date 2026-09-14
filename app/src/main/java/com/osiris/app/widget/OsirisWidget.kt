@@ -228,24 +228,29 @@ object WidgetUpdater {
 /** The widget's ↻ button — unlike [WidgetUpdater] (fed by the already-running app poll), this
  * does its own one-off fetch straight from the repositories, so it works even with the app
  * process dead. Each call fails independently (`runCatching`) so one dead layer doesn't blank the
- * others; if the backend URL isn't configured at all, it's a silent no-op — there's no surface on
- * a home-screen widget to usefully show a settings error on. */
+ * others. Cyberattaques/Séismes fetch straight from their upstream now (no backend involved) so
+ * they still refresh with no backend URL configured; Vols/Conflits/Trafic still need one. */
 class RefreshWidgetAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         val backendUrl = BackendPreferences(context).backendUrlFlow.first()
-        if (backendUrl.isBlank()) return
 
-        val flightsCount = runCatching { FlightsRepository().fetch(backendUrl).size }.getOrNull()
         val cyberCount = runCatching { CyberAttacksRepository().fetch(backendUrl).size }.getOrNull()
-        val conflictsCount = runCatching {
-            ConflictsRepository().fetch(backendUrl).count { it.severity in CONFLICT_ALERT_LEVELS }
-        }.getOrNull()
         val earthquakesCount = runCatching {
             EarthquakesRepository().fetch(backendUrl).count { (it.magnitude ?: 0.0) >= WIDGET_EARTHQUAKE_MIN_MAGNITUDE }
         }.getOrNull()
-        val trafficCount = runCatching {
-            TrafficRepository().fetch(backendUrl).count { (it.magnitude ?: 0) >= WIDGET_TRAFFIC_MIN_MAGNITUDE }
-        }.getOrNull()
+
+        var flightsCount: Int? = null
+        var conflictsCount: Int? = null
+        var trafficCount: Int? = null
+        if (backendUrl.isNotBlank()) {
+            flightsCount = runCatching { FlightsRepository().fetch(backendUrl).size }.getOrNull()
+            conflictsCount = runCatching {
+                ConflictsRepository().fetch(backendUrl).count { it.severity in CONFLICT_ALERT_LEVELS }
+            }.getOrNull()
+            trafficCount = runCatching {
+                TrafficRepository().fetch(backendUrl).count { (it.magnitude ?: 0) >= WIDGET_TRAFFIC_MIN_MAGNITUDE }
+            }.getOrNull()
+        }
 
         writeWidgetCounts(context, glanceId, flightsCount, cyberCount, conflictsCount, earthquakesCount, trafficCount)
         OsirisWidget().update(context, glanceId)

@@ -180,11 +180,12 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         pendingFlightKey = callsign
         viewModelScope.launch {
             val baseUrl = backendUrl.value
-            if (baseUrl.isBlank()) return@launch
-            val routeDeferred = async { flightsRepo.fetchRoute(baseUrl, marker.flight) }
+            // fetchAircraftDetail no longer touches the backend (adsb.lol/adsbdb directly) —
+            // only the scheduled-route lookup still needs one configured.
+            val routeDeferred = baseUrl.takeIf { it.isNotBlank() }?.let { url -> async { flightsRepo.fetchRoute(url, marker.flight) } }
             val aircraftDeferred = marker.flight.icao24?.takeIf { it.isNotBlank() }
                 ?.let { hex -> async { flightsRepo.fetchAircraftDetail(baseUrl, hex) } }
-            val route = routeDeferred.await()
+            val route = routeDeferred?.await()
             val aircraft = aircraftDeferred?.await()
             if (pendingFlightKey == callsign) {
                 val enrichment = FlightEnrichment(route, aircraft)
@@ -500,7 +501,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         pollingJobs[layer] = viewModelScope.launch {
             while (isActive) {
                 val baseUrl = backendUrl.value
-                if (baseUrl.isBlank()) {
+                if (baseUrl.isBlank() && layer !in NATIVE_LAYERS) {
                     setError(layer, "Configure l'URL du backend dans Réglages")
                 } else {
                     runCatching { fetch(layer, baseUrl) }
@@ -618,6 +619,11 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         val CONFLICT_ALERT_LEVELS = setOf("high", "war")
         const val REPLAY_BUFFER_CAPACITY = 40
         const val REPLAY_RECORD_INTERVAL_MS = 30_000L
+
+        /** Layers ported off the backend (see the "no backend" migration plan, Phase 1) — these
+         * poll fine with no backend URL configured at all, unlike everything still proxied
+         * through the self-hosted Osiris instance. */
+        val NATIVE_LAYERS = setOf(MapLayer.EARTHQUAKES, MapLayer.FIRES, MapLayer.CYBER_ATTACKS, MapLayer.NEWS)
     }
 }
 

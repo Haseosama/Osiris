@@ -573,7 +573,12 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Image(
-                        painter = painterResource(R.mipmap.ic_launcher),
+                        // Not R.mipmap.ic_launcher: at API 26+ that resource id resolves to the
+                        // mipmap-anydpi-v26 <adaptive-icon> XML, which painterResource() can't
+                        // load (it only supports VectorDrawable XML or raster PNG/JPG/WEBP) —
+                        // crashes with IllegalArgumentException on every launch. app_icon is a
+                        // plain per-density raster copy with no adaptive-icon XML shadowing it.
+                        painter = painterResource(R.mipmap.app_icon),
                         contentDescription = null,
                         modifier = Modifier
                             .size(28.dp)

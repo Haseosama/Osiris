@@ -16,13 +16,15 @@ import java.util.concurrent.TimeUnit
  */
 object NetworkModule {
 
-    private val json = Json {
+    /** Shared by the `data/source/*` and `recon/source/*` direct-fetch clients too — no reason
+     * for each to build its own [Json]/[OkHttpClient]. */
+    val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
         coerceInputValues = true
     }
 
-    private val okHttpClient = OkHttpClient.Builder()
+    val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()

@@ -500,6 +500,19 @@ Au premier lancement, ouvre **Réglages** et renseigne l'URL de ton backend (ex.
       échantillonnée directement sur le coin de l'illustration pour que la marge transparente se
       fonde dedans. Un petit rappel de cette icône apparaît aussi à côté du titre « OSIRIS » en
       haut à gauche de l'appli
+- [x] **Vers zéro backend, phase 1** — chantier en plusieurs phases pour que l'appli n'ait plus
+      besoin du tout d'un backend auto-hébergé (voir le plan de migration). Cette première phase
+      porte les couches sans clé et à logique de fusion minimale directement en Kotlin, chacune
+      appelant sa source amont depuis le téléphone au lieu de passer par `/api/*` : Séismes
+      (USGS), Incendies (CSV NASA FIRMS + volcans EONET), Cyberattaques (blocklist Feodo Tracker
+      abuse.ch), Actu en direct (liste statique, aucune requête réseau côté backend de toute
+      façon), et le détail d'un vol au tap (traces adsb.lol + identité adsbdb, avec la même table
+      de ~330 aéroports et la même détection de tronçon en cours que le backend). Sept outils
+      RECON suivent le même chemin : DNS, Certificats SSL, CVE, Fuites de données, GitHub,
+      Adresse MAC, et Téléphone (ce dernier 100% local via `libphonenumber`, aucune requête).
+      Chaque couche/outil migré fonctionne désormais même sans backend configuré du tout — le
+      reste (vols en direct, trafic, maritime, CCTV, OSINT Telegram, scanner de ports...) continue
+      de passer par le backend en attendant les phases suivantes
 
 ## Licence
 

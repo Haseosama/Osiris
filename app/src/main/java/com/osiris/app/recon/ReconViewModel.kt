@@ -56,7 +56,7 @@ class ReconViewModel(application: Application) : AndroidViewModel(application) {
     fun runQuery() {
         val tool = _selectedTool.value
         val baseUrl = backendUrl.value
-        if (baseUrl.isBlank()) {
+        if (baseUrl.isBlank() && tool !in ReconRepository.NATIVE_TOOLS) {
             _errorText.value = "Configure l'URL du backend dans Réglages"
             return
         }

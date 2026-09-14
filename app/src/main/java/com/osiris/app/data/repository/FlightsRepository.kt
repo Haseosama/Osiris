@@ -6,6 +6,7 @@ import com.osiris.app.data.model.FlightMarker
 import com.osiris.app.data.model.FlightRoute
 import com.osiris.app.data.model.toMarkers
 import com.osiris.app.data.remote.NetworkModule
+import com.osiris.app.data.source.AdsbAircraftSource
 import kotlinx.serialization.json.Json
 import java.net.URLEncoder
 
@@ -33,13 +34,10 @@ class FlightsRepository {
     }.getOrNull()
 
     /** This airframe's identity (registration/type/operator) and actual flown track for the
-     * current leg — see [AircraftDetail]. Returns null on any failure, including a 404 for an
-     * icao24 adsb.lol has no trace history for (common for aircraft first seen minutes ago). */
-    suspend fun fetchAircraftDetail(baseUrl: String, icao24: String): AircraftDetail? = runCatching {
-        val hex = icao24.trim().lowercase().takeIf { it.isNotBlank() } ?: return null
-        val response = NetworkModule.apiFor(baseUrl).raw("api/aircraft?icao24=$hex")
-        if (!response.isSuccessful) return null
-        val body = response.body()?.string() ?: return null
-        json.decodeFromString<AircraftDetail>(body)
-    }.getOrNull()
+     * current leg — see [AircraftDetail]. Called directly against adsb.lol/adsbdb (see
+     * [com.osiris.app.data.source.AdsbAircraftSource]) — no backend involved. Returns null on
+     * any failure, including no trace history for an icao24 (common for aircraft first seen
+     * minutes ago); `baseUrl` is unused, kept only so call sites don't need to change. */
+    suspend fun fetchAircraftDetail(baseUrl: String, icao24: String): AircraftDetail? =
+        runCatching { AdsbAircraftSource.fetch(icao24) }.getOrNull()
 }
