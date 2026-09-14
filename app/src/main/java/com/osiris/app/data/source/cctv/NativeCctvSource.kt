@@ -6,7 +6,7 @@ import kotlinx.coroutines.coroutineScope
 
 /**
  * Aggregates every CCTV region ported off the backend — see the "no backend" migration plan,
- * Phase 5. Built up in batches across `osiris-backend/src/app/api/cctv/*.ts`'s ~45 sources:
+ * Phase 5. Built up in batches across `osiris-backend/src/app/api/cctv/` (all `*.ts` files) ~45 sources:
  * Batch 1: [TflCctvSource] (UK), [WsdotCctvSource]/[CaltransCctvSource] (Washington/California),
  * [FranceCctvSource] (APRR/AREA's 123 highway webcams + static list).
  * Batch 2: the IBI 511 US states — [FloridaCctvSource], [GeorgiaCctvSource],
@@ -33,9 +33,7 @@ import kotlinx.coroutines.coroutineScope
  * both image and stream URL — neither actually loads as either) have nothing portable.
  *
  * Every region `route.ts` served is now covered — [com.osiris.app.data.repository.CctvRepository]
- * still merges this with the backend as a safety net (a source failing here isn't the same as
- * the layer having no coverage at all when a backend happens to be configured), but the map has
- * full native coverage with no backend running.
+ * is just this list, no backend involved at all any more.
  */
 object NativeCctvSource {
     private val SOURCES: List<suspend () -> List<CctvCamera>> = listOf(

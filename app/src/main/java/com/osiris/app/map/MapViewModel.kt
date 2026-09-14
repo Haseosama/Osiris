@@ -418,8 +418,15 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Flights only get a fresh fix every poll (60s), which reads as teleporting — dead-reckon
-     * the marker forward from its last real fix using heading+speed every second instead, reset
-     * to the true position whenever [fetch] lands a new one. See [DeadReckoning]. */
+     * the marker forward from its last real fix using heading+speed instead, reset to the true
+     * position whenever [fetch] lands a new one. See [DeadReckoning].
+     *
+     * Ticks at [FLIGHTS_ANIM_TICK_MS] (100ms/10Hz), not once a second: a 500kt airliner covers
+     * ~250m between one-second ticks, which read as a visible hop on anything but the widest
+     * zoom — GeoJsonSource.setGeoJson() (see LayersController.setFlights) just replaces the data
+     * outright, no interpolation of its own, so how smooth the glide looks is entirely down to
+     * how often this pushes a new position. At 100ms that's ~25m/step, well under what's
+     * perceptible while panning/zoomed in on a single aircraft. */
     private fun startFlightsAnimation() {
         flightsAnimJob?.cancel()
         flightsAnimJob = viewModelScope.launch {
@@ -437,7 +444,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                 }
-                delay(1000L)
+                delay(FLIGHTS_ANIM_TICK_MS)
             }
         }
     }
@@ -462,7 +469,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     maritime.value = rawMaritime.copy(ships = ships)
                 }
-                delay(1000L)
+                delay(MARITIME_ANIM_TICK_MS)
             }
         }
     }
@@ -483,7 +490,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                         sat.copy(lat = lat, lng = lng)
                     }
                 }
-                delay(1000L)
+                delay(SATELLITES_ANIM_TICK_MS)
             }
         }
     }
@@ -645,6 +652,14 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         val CONFLICT_ALERT_LEVELS = setOf("high", "war")
         const val REPLAY_BUFFER_CAPACITY = 40
         const val REPLAY_RECORD_INTERVAL_MS = 30_000L
+
+        /** Dead-reckoning push rate for flights/maritime/satellites — see [startFlightsAnimation].
+         * 100ms (10Hz) rather than the old 1s: DeadReckoning.project() already takes real elapsed
+         * time so accuracy doesn't depend on cadence, only how often GeoJsonSource.setGeoJson()
+         * gets a new (smaller-delta) position to snap to. */
+        const val FLIGHTS_ANIM_TICK_MS = 100L
+        const val MARITIME_ANIM_TICK_MS = 100L
+        const val SATELLITES_ANIM_TICK_MS = 100L
     }
 }
 
