@@ -14,23 +14,38 @@ import kotlinx.coroutines.coroutineScope
  * Batch 2: the IBI 511 US states — [FloridaCctvSource] (~4,950), [GeorgiaCctvSource] (~4,040),
  * [NorthCarolinaCctvSource] (~1,140), [ArizonaCctvSource] (~640) via the shared [Ibi511] loader,
  * plus [LouisianaCctvSource] (~336) on the same platform with its own record shape.
+ * Batch 3: [AustraliaCctvSource] and [FinlandCctvSource] (~470, keyless APIs), plus six small
+ * static-list countries — [PolandCctvSource] (~70 real HLS streams), [BulgariaCctvSource],
+ * [SerbiaCctvSource], [MacedoniaCctvSource], [GermanyCctvSource], [SlovakiaCctvSource],
+ * [CzechiaCctvSource].
  *
  * [com.osiris.app.data.repository.CctvRepository] merges this with whatever the backend still
  * serves for the regions not yet listed here, so the map keeps full coverage when a backend is
  * configured and a real (smaller) subset when it isn't.
  */
 object NativeCctvSource {
+    private val SOURCES: List<suspend () -> List<CctvCamera>> = listOf(
+        TflCctvSource::fetch,
+        WsdotCctvSource::fetch,
+        CaltransCctvSource::fetch,
+        FranceCctvSource::fetch,
+        FloridaCctvSource::fetch,
+        GeorgiaCctvSource::fetch,
+        NorthCarolinaCctvSource::fetch,
+        ArizonaCctvSource::fetch,
+        LouisianaCctvSource::fetch,
+        AustraliaCctvSource::fetch,
+        FinlandCctvSource::fetch,
+        PolandCctvSource::fetch,
+        BulgariaCctvSource::fetch,
+        SerbiaCctvSource::fetch,
+        MacedoniaCctvSource::fetch,
+        GermanyCctvSource::fetch,
+        SlovakiaCctvSource::fetch,
+        CzechiaCctvSource::fetch,
+    )
+
     suspend fun fetch(): List<CctvCamera> = coroutineScope {
-        val tfl = async { TflCctvSource.fetch() }
-        val wsdot = async { WsdotCctvSource.fetch() }
-        val caltrans = async { CaltransCctvSource.fetch() }
-        val france = async { FranceCctvSource.fetch() }
-        val florida = async { FloridaCctvSource.fetch() }
-        val georgia = async { GeorgiaCctvSource.fetch() }
-        val northCarolina = async { NorthCarolinaCctvSource.fetch() }
-        val arizona = async { ArizonaCctvSource.fetch() }
-        val louisiana = async { LouisianaCctvSource.fetch() }
-        tfl.await() + wsdot.await() + caltrans.await() + france.await() +
-            florida.await() + georgia.await() + northCarolina.await() + arizona.await() + louisiana.await()
+        SOURCES.map { source -> async { source() } }.map { it.await() }.flatten()
     }
 }

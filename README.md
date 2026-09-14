@@ -600,6 +600,25 @@ Au premier lancement, ouvre **Réglages** et renseigne l'URL de ton backend (ex.
       sélection du nom diffère légèrement). La plupart de ces caméras diffusent en HLS plutôt
       qu'en MP4 simple — dépendance `media3-exoplayer-hls` ajoutée, l'artefact `exoplayer` seul
       ne sait pas lire un `.m3u8`. Neuf régions CCTV natives au total avec le lot 1
+- [x] **Vers zéro backend, phase 5.5 — CCTV, lot 3/N** — **Australie** (Live Traffic NSW) et
+      **Finlande** (Digitraffic, ~470 stations météoroutières) côté API keyless ; côté listes
+      statiques, **Pologne** (~70 flux HLS réels du réseau nadmorski24.pl sur la côte
+      baltique), **Bulgarie**, **Serbie**, **Macédoine du Nord** (dont plusieurs flux HLS de
+      postes-frontières), et **Allemagne**/**Slovaquie**/**Tchéquie** (webcams YouTube,
+      converties en lien externe comme pour la France — `stream_type: 'iframe'` n'a pas
+      d'équivalent lecteur). La Turquie (source vidée côté backend, restrictions X-Frame-Options
+      Windy.com) et la Grèce (lecteur web IPCamLive utilisé comme URL d'image, ni image ni flux
+      lisible tel quel) n'ont rien à porter. L'Italie reste elle aussi de côté : 100%
+      SkylineWebcams, le CDN à en-tête `Referer` toujours pas géré. `NativeCctvSource`
+      restructuré en simple liste de sources plutôt qu'un lancement `async` par source à la
+      main, pour que les prochains lots n'aient plus qu'à ajouter une ligne. Dix-sept régions
+      CCTV natives au total
+- [x] **Marqueur de position actuelle sur la carte** — jusqu'ici seul le bouton « Actualiser ma
+      position » recentrait la caméra une fois au tap ; aucun marqueur persistant n'indiquait
+      où se trouve réellement l'appareil pendant qu'on déplace la carte. Active le
+      `LocationComponent` natif de MapLibre (le classique point bleu avec orientation boussole)
+      sur chaque style chargé — `CameraMode.NONE` pour qu'il n'entre jamais en conflit avec le
+      recentrage manuel du bouton existant, qui reste l'unique façon de déplacer la caméra
 
 ## Licence
 
