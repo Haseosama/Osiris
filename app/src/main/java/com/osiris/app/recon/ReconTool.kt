@@ -4,9 +4,9 @@ data class SecondaryParam(val name: String, val options: List<String>, val defau
 
 /**
  * The RECON toolkit is a list panel, not map pins — a CVE or a WHOIS record has no lat/lng.
- * Every tool hits a keyless GET on the self-hosted Osiris backend and the response is shown
- * as pretty-printed JSON (see [com.osiris.app.recon.ReconRepository]); [PORT_SCAN] is the one
- * exception that needs SCANNER_URL/SCANNER_KEY configured server-side and returns 503 otherwise.
+ * Most tools call their upstream source directly from the phone and the response is shown as
+ * pretty-printed JSON (see [com.osiris.app.recon.ReconRepository]); [SPACE_WEATHER] is the one
+ * remaining tool proxied through the self-hosted Osiris backend.
  */
 enum class ReconTool(
     val label: String,
@@ -23,7 +23,7 @@ enum class ReconTool(
         "IP ou domaine (ex: exemple.com)",
         secondaryParam = SecondaryParam(
             name = "type",
-            options = listOf("quick", "ssl", "headers", "rdns", "subdomains", "tech", "whois", "geoloc", "vuln"),
+            options = listOf("quick", "ssl", "headers", "rdns", "subdomains", "whois", "geoloc"),
             default = "quick",
         ),
     ),

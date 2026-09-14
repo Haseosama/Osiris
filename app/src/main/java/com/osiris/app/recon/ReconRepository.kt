@@ -7,6 +7,7 @@ import com.osiris.app.recon.source.GithubSource
 import com.osiris.app.recon.source.IpIntelSource
 import com.osiris.app.recon.source.LeaksSource
 import com.osiris.app.recon.source.MacSource
+import com.osiris.app.recon.source.NetworkScannerSource
 import com.osiris.app.recon.source.PhoneSource
 import com.osiris.app.recon.source.SanctionsSource
 import com.osiris.app.recon.source.SslCertsSource
@@ -26,7 +27,7 @@ class ReconRepository {
             ReconTool.DNS, ReconTool.SSL_CERTS, ReconTool.CVE, ReconTool.LEAKS,
             ReconTool.GITHUB, ReconTool.MAC, ReconTool.PHONE,
             ReconTool.WHOIS, ReconTool.IP_INTEL, ReconTool.SANCTIONS,
-            ReconTool.CRYPTO_WALLET, ReconTool.USERNAME,
+            ReconTool.CRYPTO_WALLET, ReconTool.USERNAME, ReconTool.PORT_SCAN,
         )
     }
 
@@ -35,10 +36,9 @@ class ReconRepository {
         ignoreUnknownKeys = true
     }
 
-    /** Tools ported off the backend (see the "no backend" migration plan, Phase 1) hit their
-     * upstream source directly; everything else still goes through the self-hosted Osiris
-     * backend's /api/osint/ proxy, same as before. `baseUrl` only matters for that second
-     * group. */
+    /** Every tool but [ReconTool.SPACE_WEATHER] now hits its upstream source directly from the
+     * phone (see the "no backend" migration plan) — `baseUrl` only matters for that one
+     * remaining tool, still proxied through the self-hosted Osiris backend. */
     suspend fun query(baseUrl: String, tool: ReconTool, value: String, secondaryValue: String?): Result<ReconResult> =
         runCatching {
             when (tool) {
@@ -54,6 +54,7 @@ class ReconRepository {
                 ReconTool.SANCTIONS -> ReconResult.Sanctions(SanctionsSource.search(value, schema = null))
                 ReconTool.CRYPTO_WALLET -> ReconResult.CryptoWallet(WalletIntelSource.lookup(value, chainOverride = null))
                 ReconTool.USERNAME -> ReconResult.Username(UsernameSherlockSource.lookup(value))
+                ReconTool.PORT_SCAN -> ReconResult.Raw(NetworkScannerSource.scan(value, secondaryValue ?: "quick"))
                 else -> {
                     val url = buildUrl(tool, value, secondaryValue)
                     val response = NetworkModule.apiFor(baseUrl).raw(url)

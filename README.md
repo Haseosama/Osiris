@@ -550,6 +550,19 @@ Au premier lancement, ouvre **Réglages** et renseigne l'URL de ton backend (ex.
       calibration anti-faux-positif par deux pseudos de contrôle aléatoires). Douze
       couches/outils natifs au total ; ne restent derrière le backend que le fil OSINT
       Telegram, le CCTV, et le scanner de ports (phase 5)
+- [x] **Vers zéro backend, phase 5.1 — scanner réseau** — `/api/scanner` s'est avéré être un
+      simple proxy vers un microservice externe (`SCANNER_URL`/`SCANNER_KEY`) dont le code
+      n'est dans aucun des deux dépôts : impossible de porter ses 9 types de scan ligne à
+      ligne. Reconstruit nativement les sept qui correspondent à des techniques standard bien
+      comprises, en réutilisant les sources déjà écrites pour d'autres outils RECON quand les
+      mêmes données s'appliquent : `whois` (RDAP), `ssl`/`subdomains` (crt.sh, qui renvoie déjà
+      les deux), `geoloc` (ip-api.com résout aussi un nom de domaine côté serveur), `rdns`
+      (DNS-over-HTTPS Google, PTR), `headers` (même sonde HTTP HEAD que WHOIS), et `quick` (scan
+      de connexion TCP — pas SYN — borné à une liste fixe de ports courants, pas une plage
+      arbitraire, exécuté depuis le téléphone avec un avertissement explicite dans le résultat).
+      `tech` et `vuln` sont retirés du menu : aucune façon honnête de les approcher sans le code
+      du microservice d'origine. Treize couches/outils natifs au total ; ne restent derrière le
+      backend que le fil OSINT Telegram et le CCTV
 
 ## Licence
 
