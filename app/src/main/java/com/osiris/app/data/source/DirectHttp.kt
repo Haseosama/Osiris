@@ -27,4 +27,23 @@ object DirectHttp {
 
     suspend inline fun <reified T> getJson(url: String, headers: Map<String, String> = emptyMap()): T =
         NetworkModule.json.decodeFromString(getText(url, headers))
+
+    data class HeadResult(val code: Int, val headers: Map<String, String>, val redirected: Boolean, val finalUrl: String)
+
+    /** HEAD request, following redirects (OkHttp does this by default). Doesn't throw on a
+     * non-2xx status — a 4xx/5xx is still a valid answer for a tech-fingerprinting probe like
+     * WHOIS's, unlike [getText]/[getJson] where a bad status means the payload is missing. */
+    suspend fun head(url: String): HeadResult = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url(url).head().build()
+        NetworkModule.okHttpClient.newCall(request).execute().use { response ->
+            HeadResult(
+                code = response.code,
+                headers = response.headers.toMap(),
+                redirected = response.priorResponse != null,
+                finalUrl = response.request.url.toString(),
+            )
+        }
+    }
 }
+
+private fun okhttp3.Headers.toMap(): Map<String, String> = names().associateWith { get(it).orEmpty() }

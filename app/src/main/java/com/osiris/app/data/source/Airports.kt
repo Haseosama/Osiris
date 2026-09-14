@@ -366,6 +366,19 @@ object Airports {
     FlightAirport("UIO", "SEQM", "Mariscal Sucre", "Quito", "EC", -0.1292, -78.3575),
     FlightAirport("GYE", "SEGU", "José Joaquín de Olmedo", "Guayaquil", "EC", -2.1574, -79.8837),    )
 
+    private val BY_ICAO: Map<String, FlightAirport> = ALL.associateBy { it.icao }
+    private val BY_IATA: Map<String, FlightAirport> = ALL.associateBy({ it.iata }, { it }).filterKeys { it.isNotBlank() }
+
+    /** Look up by ICAO (4-char) or IATA (3-char) code — used to resolve the origin/destination
+     * codes returned by route-lookup sources (see [com.osiris.app.data.source.FlightRouteSource])
+     * into real coordinates. No dynamic ADSBDB fallback for codes missing from this table —
+     * that source usually hands back its own coordinates directly anyway when ours misses. */
+    fun lookupByCode(code: String): FlightAirport? {
+        val upper = code.trim().uppercase()
+        if (upper.isEmpty()) return null
+        return BY_ICAO[upper] ?: BY_IATA[upper]
+    }
+
     /**
      * The airport closest to a position, or null if none is within [maxKm]. Used to name the
      * airport a flown leg actually started from/landed at, read off the track rather than

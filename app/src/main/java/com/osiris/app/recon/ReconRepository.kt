@@ -4,10 +4,13 @@ import com.osiris.app.data.remote.NetworkModule
 import com.osiris.app.recon.source.CveSource
 import com.osiris.app.recon.source.DnsSource
 import com.osiris.app.recon.source.GithubSource
+import com.osiris.app.recon.source.IpIntelSource
 import com.osiris.app.recon.source.LeaksSource
 import com.osiris.app.recon.source.MacSource
 import com.osiris.app.recon.source.PhoneSource
+import com.osiris.app.recon.source.SanctionsSource
 import com.osiris.app.recon.source.SslCertsSource
+import com.osiris.app.recon.source.WhoisSource
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import java.net.URLEncoder
@@ -20,6 +23,7 @@ class ReconRepository {
         val NATIVE_TOOLS: Set<ReconTool> = setOf(
             ReconTool.DNS, ReconTool.SSL_CERTS, ReconTool.CVE, ReconTool.LEAKS,
             ReconTool.GITHUB, ReconTool.MAC, ReconTool.PHONE,
+            ReconTool.WHOIS, ReconTool.IP_INTEL, ReconTool.SANCTIONS,
         )
     }
 
@@ -35,7 +39,7 @@ class ReconRepository {
 
     /** Tools ported off the backend (see the "no backend" migration plan, Phase 1) hit their
      * upstream source directly; everything else still goes through the self-hosted Osiris
-     * backend's `/api/osint/*` proxy, same as before. `baseUrl` only matters for that second
+     * backend's /api/osint/ proxy, same as before. `baseUrl` only matters for that second
      * group. */
     suspend fun query(baseUrl: String, tool: ReconTool, value: String, secondaryValue: String?): Result<ReconResult> =
         runCatching {
@@ -47,6 +51,9 @@ class ReconRepository {
                 ReconTool.GITHUB -> ReconResult.Github(GithubSource.lookup(value))
                 ReconTool.MAC -> ReconResult.Mac(MacSource.lookup(value))
                 ReconTool.PHONE -> ReconResult.Phone(PhoneSource.lookup(value))
+                ReconTool.WHOIS -> ReconResult.Whois(WhoisSource.lookup(value))
+                ReconTool.IP_INTEL -> ReconResult.IpIntel(IpIntelSource.lookup(value))
+                ReconTool.SANCTIONS -> ReconResult.Sanctions(SanctionsSource.search(value, schema = null))
                 else -> {
                     val url = buildUrl(tool, value, secondaryValue)
                     val response = NetworkModule.apiFor(baseUrl).raw(url)
@@ -75,13 +82,12 @@ class ReconRepository {
         }
     }
 
-    /** Only reached for tools still proxied through the backend (see [NATIVE_TOOLS]) — tries the
-     * typed shape for the ones that have one; anything else (or a decode mismatch, e.g. an
-     * unexpected `{ error: ... }` body) falls back to pretty-printed raw JSON. */
+    /** Only reached for tools still proxied through the backend (see [NATIVE_TOOLS]: everything
+     * else is [PORT_SCAN][ReconTool.PORT_SCAN] and [SPACE_WEATHER][ReconTool.SPACE_WEATHER],
+     * neither of which has a typed shape) — tries the typed shape for the ones that have one;
+     * anything else (or a decode mismatch, e.g. an unexpected `{ error: ... }` body) falls back
+     * to pretty-printed raw JSON. */
     private fun parse(tool: ReconTool, body: String): ReconResult = when (tool) {
-        ReconTool.IP_INTEL -> decodeOrRaw(body) { ReconResult.IpIntel(json.decodeFromString(body)) }
-        ReconTool.SANCTIONS -> decodeOrRaw(body) { ReconResult.Sanctions(json.decodeFromString(body)) }
-        ReconTool.WHOIS -> decodeOrRaw(body) { ReconResult.Whois(json.decodeFromString(body)) }
         ReconTool.CRYPTO_WALLET -> decodeOrRaw(body) { ReconResult.CryptoWallet(json.decodeFromString(body)) }
         ReconTool.USERNAME -> decodeOrRaw(body) { ReconResult.Username(json.decodeFromString(body)) }
         else -> ReconResult.Raw(prettyPrint(body))

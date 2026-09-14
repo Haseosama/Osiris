@@ -1,9 +1,21 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.serialization")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+// Third-party API keys for the native (no-backend) data sources — read from local.properties
+// (gitignored, never committed) rather than hardcoded, same as sdk.dir already is. Missing here
+// just means those BuildConfig fields come out as empty strings, not a build failure — the
+// sources that will read them (Phase 3 of the "no backend" migration) treat empty as "unset".
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+fun localProp(key: String): String = localProperties.getProperty(key) ?: ""
 
 android {
     namespace = "com.osiris.app"
@@ -15,6 +27,11 @@ android {
         targetSdk = 35
         versionCode = 2
         versionName = "0.2.0"
+
+        buildConfigField("String", "OPENSKY_CLIENT_ID", "\"${localProp("OPENSKY_CLIENT_ID")}\"")
+        buildConfigField("String", "OPENSKY_CLIENT_SECRET", "\"${localProp("OPENSKY_CLIENT_SECRET")}\"")
+        buildConfigField("String", "AIS_API_KEY", "\"${localProp("AIS_API_KEY")}\"")
+        buildConfigField("String", "TOMTOM_API_KEY", "\"${localProp("TOMTOM_API_KEY")}\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -39,6 +56,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {

@@ -179,13 +179,12 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         val callsign = marker.flight.callsign?.trim()?.takeIf { it.isNotBlank() } ?: return
         pendingFlightKey = callsign
         viewModelScope.launch {
-            val baseUrl = backendUrl.value
-            // fetchAircraftDetail no longer touches the backend (adsb.lol/adsbdb directly) —
-            // only the scheduled-route lookup still needs one configured.
-            val routeDeferred = baseUrl.takeIf { it.isNotBlank() }?.let { url -> async { flightsRepo.fetchRoute(url, marker.flight) } }
+            // Neither fetchRoute nor fetchAircraftDetail touch the backend anymore (adsbdb/
+            // hexdb/airplanes.live and adsb.lol/adsbdb directly) — baseUrl is vestigial here now.
+            val routeDeferred = async { flightsRepo.fetchRoute("", marker.flight) }
             val aircraftDeferred = marker.flight.icao24?.takeIf { it.isNotBlank() }
-                ?.let { hex -> async { flightsRepo.fetchAircraftDetail(baseUrl, hex) } }
-            val route = routeDeferred?.await()
+                ?.let { hex -> async { flightsRepo.fetchAircraftDetail("", hex) } }
+            val route = routeDeferred.await()
             val aircraft = aircraftDeferred?.await()
             if (pendingFlightKey == callsign) {
                 val enrichment = FlightEnrichment(route, aircraft)
@@ -620,10 +619,13 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         const val REPLAY_BUFFER_CAPACITY = 40
         const val REPLAY_RECORD_INTERVAL_MS = 30_000L
 
-        /** Layers ported off the backend (see the "no backend" migration plan, Phase 1) — these
-         * poll fine with no backend URL configured at all, unlike everything still proxied
-         * through the self-hosted Osiris instance. */
-        val NATIVE_LAYERS = setOf(MapLayer.EARTHQUAKES, MapLayer.FIRES, MapLayer.CYBER_ATTACKS, MapLayer.NEWS)
+        /** Layers ported off the backend (see the "no backend" migration plan, Phases 1-2) —
+         * these poll fine with no backend URL configured at all, unlike everything still
+         * proxied through the self-hosted Osiris instance. */
+        val NATIVE_LAYERS = setOf(
+            MapLayer.EARTHQUAKES, MapLayer.FIRES, MapLayer.CYBER_ATTACKS, MapLayer.NEWS,
+            MapLayer.WEATHER, MapLayer.CONFLICTS,
+        )
     }
 }
 

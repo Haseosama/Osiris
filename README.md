@@ -513,6 +513,17 @@ Au premier lancement, ouvre **Réglages** et renseigne l'URL de ton backend (ex.
       Chaque couche/outil migré fonctionne désormais même sans backend configuré du tout — le
       reste (vols en direct, trafic, maritime, CCTV, OSINT Telegram, scanner de ports...) continue
       de passer par le backend en attendant les phases suivantes
+- [x] **Vers zéro backend, phase 2** — Météo sévère (fusion NASA EONET + NOAA/NWS + GDACS,
+      parsing XML par regex pour GDACS qui n'a pas d'API JSON), Zones de conflit (mêmes flux RSS
+      BBC/Al Jazeera/NYT que le backend, appariés aux mêmes 15 zones fixes par mots-clés), et la
+      route de vol détaillée au tap (course adsbdb/hexdb/airplanes.live, plausibilité
+      géographique vérifiée comme côté backend). Trois outils RECON de plus : WHOIS (RDAP +
+      empreinte des en-têtes HTTP), IP Intelligence (ip-api.com), Sanctions OFAC — ces trois
+      partagent un module `SanctionsIndex` qui télécharge et indexe le CSV OpenSanctions
+      (~7 Mo, dizaines de milliers d'entrées) une fois, en cache 24h, port direct de
+      `sanctions.ts` du backend. Dix couches/outils natifs au total maintenant ; il ne reste que
+      vols en direct, trafic, maritime, satellites, CCTV, OSINT Telegram, scanner de ports, et
+      wallet crypto/pseudo côté RECON derrière le backend
 
 ## Licence
 

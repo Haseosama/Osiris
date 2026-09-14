@@ -1,9 +1,11 @@
 package com.osiris.app.data.repository
 
 import com.osiris.app.data.model.ConflictZone
-import com.osiris.app.data.remote.NetworkModule
+import com.osiris.app.data.source.GdeltConflictsSource
 
 class ConflictsRepository {
-    suspend fun fetch(baseUrl: String): List<ConflictZone> =
-        NetworkModule.apiFor(baseUrl).conflicts().zones
+    /** `baseUrl` is unused — the known-zone list + live RSS enrichment happen directly on the
+     * phone, no backend involved (see [GdeltConflictsSource]); kept only so call sites don't
+     * need to change. */
+    suspend fun fetch(baseUrl: String): List<ConflictZone> = GdeltConflictsSource.fetch()
 }

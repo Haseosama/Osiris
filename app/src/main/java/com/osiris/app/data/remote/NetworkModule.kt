@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit
  */
 object NetworkModule {
 
-    /** Shared by the `data/source/*` and `recon/source/*` direct-fetch clients too — no reason
+    /** Shared by the data/source and recon/source direct-fetch clients too — no reason
      * for each to build its own [Json]/[OkHttpClient]. */
     val json = Json {
         ignoreUnknownKeys = true
