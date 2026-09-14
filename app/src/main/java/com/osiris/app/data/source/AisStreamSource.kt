@@ -19,6 +19,7 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import java.util.Collections
+import java.util.concurrent.TimeUnit
 import kotlin.math.cos
 import kotlin.math.sqrt
 
@@ -40,6 +41,17 @@ object AisStreamSource {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val json = Json { ignoreUnknownKeys = true }
+
+    // [NetworkModule.okHttpClient]'s 30s readTimeout is meant for bounded HTTP calls — applied to
+    // a long-lived WebSocket it kills the connection during any lull longer than that (a known
+    // OkHttp gotcha: the read timeout is enforced per idle gap, not per request), which reads as
+    // "ships stop updating"/"no ships" until scheduleReconnect() catches it 5s later. A dedicated
+    // client with no read timeout and a ping every 20s (well under that 30s window, keeping the
+    // connection demonstrably alive even if aisstream.io itself goes quiet) avoids the churn.
+    private val webSocketClient = NetworkModule.okHttpClient.newBuilder()
+        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .pingInterval(20, TimeUnit.SECONDS)
+        .build()
 
     private data class MutableShip(
         val mmsi: Long,
@@ -68,7 +80,7 @@ object AisStreamSource {
         connecting = true
 
         val request = Request.Builder().url(WS_URL).build()
-        webSocket = NetworkModule.okHttpClient.newWebSocket(request, object : WebSocketListener() {
+        webSocket = webSocketClient.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(ws: WebSocket, response: Response) {
                 connecting = false
                 ws.send(subscriptionMessage(apiKey))

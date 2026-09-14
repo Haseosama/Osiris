@@ -262,20 +262,14 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private var rawMaritime = MaritimeResponse()
     private var maritimePolledAtMs = 0L
 
-    // allSatellitesFromLastPoll is the full catalogue from the last poll, unfiltered — velocity
-    // tracking (below) runs against all of it, so re-enabling a hidden category shows it moving
-    // immediately instead of needing another poll to warm up. rawSatellites is that same poll
-    // filtered by category (see filterSatellitesByCategory) and is what actually gets animated
-    // and rendered.
+    // allSatellitesFromLastPoll is the full catalogue from the last poll, unfiltered — kept for
+    // the replay buffer and for re-deriving rawSatellites when a category is toggled without
+    // waiting for the next poll. rawSatellites is that same poll filtered by category (see
+    // filterSatellitesByCategory) and is what actually gets animated (re-propagated live every
+    // tick, see startSatellitesAnimation) and rendered.
     private var allSatellitesFromLastPoll: List<Satellite> = emptyList()
     private var rawSatellites: List<Satellite> = emptyList()
     private var satellitesPolledAtMs = 0L
-
-    // Satellites report only a lat/lng (SGP4 output), no heading/speed like flights/ships do —
-    // so unlike [rawFlights]/[rawMaritime] this derives an implied velocity by comparing each
-    // satellite's new fix against its previous one (keyed by NORAD id, falling back to name).
-    private var previousSatelliteFixes: Map<String, Pair<Double, Double>> = emptyMap()
-    private var satelliteVelocities: Map<String, Pair<Double, Double>> = emptyMap() // key -> (headingDeg, speedKnots)
 
     // Rolling buffer of what flights/ships/satellites actually looked like at each poll cycle —
     // there's no server-side history, so "replay" only ever means rewinding through what this
@@ -474,45 +468,25 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Same dead-reckoning treatment as flights/ships, but satellites report only a bare lat/lng
-     * (no heading/speed) — [updateSatelliteVelocities] derives one by diffing each satellite's
-     * fix against its previous poll first. A LEO satellite covers real ground between 60s polls
-     * (~500km for a typical one), so without this it visibly teleports. */
+    /** Unlike flights/ships, satellites don't need dead-reckoning at all: their raw TLEs stay
+     * cached in memory (see [SatellitesRepository.propagateLive]), so every tick just re-runs the
+     * real SGP4/SDP4 math for "now" on the currently-displayed set — the true live position, not
+     * an approximation extrapolated from the last poll. That's also what makes it look properly
+     * fast: a LEO satellite's real ground speed is ~7.5km/s, so showing its *actual* position
+     * every tick (rather than an interpolated guess) is both more accurate and more dramatic than
+     * dead-reckoning ever was. */
     private fun startSatellitesAnimation() {
         satellitesAnimJob?.cancel()
         satellitesAnimJob = viewModelScope.launch {
             while (isActive) {
-                if (!isReplaying.value) {
-                    val elapsed = System.currentTimeMillis() - satellitesPolledAtMs
-                    satellites.value = rawSatellites.map { sat ->
-                        val (heading, speed) = satelliteVelocities[sat.noradId ?: sat.name] ?: return@map sat
-                        val (lat, lng) = DeadReckoning.project(sat.lat, sat.lng, heading, speed, elapsed)
-                        sat.copy(lat = lat, lng = lng)
-                    }
+                if (!isReplaying.value && rawSatellites.isNotEmpty()) {
+                    val ids = rawSatellites.mapNotNull { it.noradId }.toSet()
+                    val live = satellitesRepo.propagateLive(ids).associateBy { it.noradId }
+                    satellites.value = rawSatellites.map { sat -> live[sat.noradId] ?: sat }
                 }
                 delay(SATELLITES_ANIM_TICK_MS)
             }
         }
-    }
-
-    /** Diffs [newSatellites] against the previous poll's fixes (matched by NORAD id, falling
-     * back to name) to derive an implied heading/speed per satellite for [startSatellitesAnimation]
-     * to extrapolate from. A satellite with no matching previous fix (first poll, or newly
-     * risen above the horizon) is simply left un-animated until the poll after this one. */
-    private fun updateSatelliteVelocities(newSatellites: List<Satellite>, nowMs: Long) {
-        val elapsedSincePreviousPoll = nowMs - satellitesPolledAtMs
-        satelliteVelocities = if (satellitesPolledAtMs > 0 && elapsedSincePreviousPoll > 0) {
-            newSatellites.mapNotNull { sat ->
-                val key = sat.noradId ?: sat.name
-                val (prevLat, prevLng) = previousSatelliteFixes[key] ?: return@mapNotNull null
-                val heading = DeadReckoning.bearing(prevLat, prevLng, sat.lat, sat.lng)
-                val speed = DeadReckoning.speedKnots(prevLat, prevLng, sat.lat, sat.lng, elapsedSincePreviousPoll)
-                key to (heading to speed)
-            }.toMap()
-        } else {
-            emptyMap()
-        }
-        previousSatelliteFixes = newSatellites.associate { (it.noradId ?: it.name) to (it.lat to it.lng) }
     }
 
     /** Recomputes each attack's dot position along its [ArcMath] curve every ~80ms while the
@@ -575,10 +549,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                 layerCache.saveMaritime(it)
             }
             MapLayer.SATELLITES -> satellitesRepo.fetch(baseUrl).also {
-                val now = System.currentTimeMillis()
-                updateSatelliteVelocities(it, now)
                 allSatellitesFromLastPoll = it
-                satellitesPolledAtMs = now
+                satellitesPolledAtMs = System.currentTimeMillis()
                 rawSatellites = filterSatellitesByCategory(it)
                 satellites.value = rawSatellites
                 layerCache.saveSatellites(it)
@@ -653,13 +625,19 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         const val REPLAY_BUFFER_CAPACITY = 40
         const val REPLAY_RECORD_INTERVAL_MS = 30_000L
 
-        /** Dead-reckoning push rate for flights/maritime/satellites — see [startFlightsAnimation].
-         * 100ms (10Hz) rather than the old 1s: DeadReckoning.project() already takes real elapsed
-         * time so accuracy doesn't depend on cadence, only how often GeoJsonSource.setGeoJson()
-         * gets a new (smaller-delta) position to snap to. */
+        /** Dead-reckoning push rate for flights/maritime — see [startFlightsAnimation]. 100ms
+         * (10Hz) rather than the old 1s: DeadReckoning.project() already takes real elapsed time
+         * so accuracy doesn't depend on cadence, only how often GeoJsonSource.setGeoJson() gets a
+         * new (smaller-delta) position to snap to. */
         const val FLIGHTS_ANIM_TICK_MS = 100L
         const val MARITIME_ANIM_TICK_MS = 100L
-        const val SATELLITES_ANIM_TICK_MS = 100L
+
+        /** Live re-propagation rate for satellites — see [startSatellitesAnimation]. Coarser than
+         * the other two because each tick is real SGP4 math (bounded to the displayed set, but
+         * still actual CPU work, not a free interpolation) rather than arithmetic — 250ms is
+         * already several km of motion per step at LEO orbital speed, plenty smooth without
+         * repropagating 4x more often than needed. */
+        const val SATELLITES_ANIM_TICK_MS = 250L
     }
 }
 

@@ -110,6 +110,17 @@ object CelesTrakSatelliteSource {
         satellites to effectiveSource
     }
 
+    /** Re-propagates just the given NORAD ids off the in-memory TLE cache — no network, pure
+     * SGP4/SDP4 math, so [com.osiris.app.map.MapViewModel] can call this several times a second
+     * for the currently-displayed satellites to get their true live position instead of a
+     * dead-reckoned approximation between polls. Cheap because it's bounded to the (typically a
+     * few hundred) satellites actually on screen, not the ~19k-entry full catalogue [fetch]
+     * classifies. */
+    suspend fun propagateLive(noradIds: Set<String>): List<Satellite> = withContext(Dispatchers.Default) {
+        if (noradIds.isEmpty()) return@withContext emptyList()
+        cachedTles.filter { noradOf(it.line1) in noradIds }.mapNotNull { propagate(it) }
+    }
+
     /** Pure math on the TLE's mean motion — no propagation needed, so this doesn't touch
      * predict4java at all. Mirrors `orbitalPeriodMinutes` in the backend's orbit.ts. */
     fun fetchOrbitPeriod(noradId: String): Double? {

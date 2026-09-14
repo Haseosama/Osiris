@@ -19,4 +19,9 @@ class SatellitesRepository {
      * [epochMs] to anchor anything; kept only so call sites don't need to change. */
     suspend fun fetchOrbitPeriod(baseUrl: String, noradId: String, epochMs: Long): Double? =
         CelesTrakSatelliteSource.fetchOrbitPeriod(noradId)
+
+    /** True live SGP4 position for the given NORAD ids, off the already-cached TLEs — see
+     * [CelesTrakSatelliteSource.propagateLive]. */
+    suspend fun propagateLive(noradIds: Set<String>): List<Satellite> =
+        CelesTrakSatelliteSource.propagateLive(noradIds)
 }

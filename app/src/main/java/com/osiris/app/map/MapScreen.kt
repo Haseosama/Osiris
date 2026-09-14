@@ -81,6 +81,7 @@ import com.osiris.app.data.model.followKey
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
@@ -194,6 +195,20 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
     var savedViewOnLaunch by remember { mutableStateOf<SavedMapView?>(null) }
     var hasCheckedForSavedView by remember { mutableStateOf(false) }
 
+    fun currentSavedView(): SavedMapView? {
+        val map = maplibreMap ?: return null
+        if (!hasCheckedForSavedView) return null
+        val target = map.cameraPosition.target ?: return null
+        return SavedMapView(
+            lat = target.latitude,
+            lng = target.longitude,
+            zoom = map.cameraPosition.zoom,
+            bearing = map.cameraPosition.bearing,
+            tilt = map.cameraPosition.tilt,
+            styleMode = mapStyleMode.name,
+        )
+    }
+
     // Only recomputed when the query or one of these lists changes — cctvCameras alone can run
     // to ~17k entries, so this must stay memoized rather than re-filtering on every recomposition
     // (flights re-renders every second once DeadReckoning kicks in, which would otherwise refilter
@@ -260,7 +275,16 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
             when (event) {
                 Lifecycle.Event.ON_START -> mapView.onStart()
                 Lifecycle.Event.ON_RESUME -> mapView.onResume()
-                Lifecycle.Event.ON_PAUSE -> mapView.onPause()
+                Lifecycle.Event.ON_PAUSE -> {
+                    // The camera-idle listener below misses the very last move if the user
+                    // backgrounds the app right after panning/zooming: its save() is fired off in
+                    // a coroutine that the process can be killed before finishing. ON_PAUSE is the
+                    // last reliable callback before that can happen, so persist synchronously here
+                    // too (a single small DataStore write, cheap enough to block on) rather than
+                    // relying solely on the fire-and-forget save.
+                    currentSavedView()?.let { view -> runBlocking { mapViewPreferences.save(view) } }
+                    mapView.onPause()
+                }
                 Lifecycle.Event.ON_STOP -> mapView.onStop()
                 Lifecycle.Event.ON_DESTROY -> mapView.onDestroy()
                 else -> Unit
@@ -306,23 +330,13 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
     }
 
     // Persists the current camera + style whenever the user stops moving the map, so the next
-    // launch can restore it — cheap enough to write on every idle, no debouncing needed.
+    // launch can restore it — cheap enough to write on every idle, no debouncing needed. The
+    // ON_PAUSE handler above additionally catches the case where this fire-and-forget save
+    // doesn't get to finish before the process dies.
     LaunchedEffect(maplibreMap) {
         val map = maplibreMap ?: return@LaunchedEffect
         map.addOnCameraIdleListener {
-            val target = map.cameraPosition.target ?: return@addOnCameraIdleListener
-            coroutineScope.launch {
-                mapViewPreferences.save(
-                    SavedMapView(
-                        lat = target.latitude,
-                        lng = target.longitude,
-                        zoom = map.cameraPosition.zoom,
-                        bearing = map.cameraPosition.bearing,
-                        tilt = map.cameraPosition.tilt,
-                        styleMode = mapStyleMode.name,
-                    )
-                )
-            }
+            currentSavedView()?.let { view -> coroutineScope.launch { mapViewPreferences.save(view) } }
         }
     }
 
@@ -374,19 +388,7 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
     // Also persist right away on a style toggle, so switching to satellite and immediately
     // killing the app (no further camera movement) still remembers the new style.
     LaunchedEffect(mapStyleMode) {
-        val map = maplibreMap ?: return@LaunchedEffect
-        if (!hasCheckedForSavedView) return@LaunchedEffect
-        val target = map.cameraPosition.target ?: return@LaunchedEffect
-        mapViewPreferences.save(
-            SavedMapView(
-                lat = target.latitude,
-                lng = target.longitude,
-                zoom = map.cameraPosition.zoom,
-                bearing = map.cameraPosition.bearing,
-                tilt = map.cameraPosition.tilt,
-                styleMode = mapStyleMode.name,
-            )
-        )
+        currentSavedView()?.let { mapViewPreferences.save(it) }
     }
 
     // Re-runs on every mode switch, not just once — setStyle() replaces the whole Style object,
