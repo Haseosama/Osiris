@@ -77,6 +77,7 @@ import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import com.osiris.app.data.MapViewPreferences
 import com.osiris.app.data.SavedMapView
+import com.osiris.app.data.model.followKey
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -107,6 +108,15 @@ private const val ESRI_LABELS_URL =
     "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
 
 private enum class MapStyleMode { STREET, SATELLITE }
+
+/** Chase-camera settings for a followed flight (see the LaunchedEffect(followedFlightKey)
+ * below) — a tilted, zoomed-in, heading-aligned view that tracks the aircraft. [FOLLOW_EASE_MS]
+ * is kept just under the flights animation loop's 1s tick (MapViewModel.startFlightsAnimation)
+ * so each ease finishes just before the next position update arrives, instead of visibly
+ * catching up or overshooting. */
+private const val FLIGHT_FOLLOW_ZOOM = 14.5
+private const val FLIGHT_FOLLOW_TILT = 55.0
+private const val FLIGHT_FOLLOW_EASE_MS = 950
 
 private fun satelliteStyleBuilder(): Style.Builder =
     Style.Builder()
@@ -161,6 +171,7 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
     val selectedCctvCamera by viewModel.selectedCctvCamera.collectAsStateWithLifecycle()
     val selectedOsintPost by viewModel.selectedOsintPost.collectAsStateWithLifecycle()
     val selectedInfo by viewModel.selectedInfo.collectAsStateWithLifecycle()
+    val followedFlightKey by viewModel.followedFlightKey.collectAsStateWithLifecycle()
     val disabledSatelliteCategories by viewModel.disabledSatelliteCategories.collectAsStateWithLifecycle()
     val flightEnrichment by viewModel.flightEnrichment.collectAsStateWithLifecycle()
     val isReplaying by viewModel.isReplaying.collectAsStateWithLifecycle()
@@ -451,6 +462,25 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
         }
     }
 
+    // Chase camera for a tapped flight (MapViewModel.selectFlight/followedFlightKey) — re-runs
+    // every time `flights` ticks (the dead-reckoning loop updates it every second while the
+    // layer is live, see startFlightsAnimation), easing the camera to the aircraft's current
+    // position with the map bearing aligned to its heading, cockpit/chase-view style. Ends when
+    // followedFlightKey goes back to null: the info dialog closing (selectInfo(null)) or the
+    // user manually moving the map (the OnCameraMoveStartedListener below) both clear it.
+    LaunchedEffect(maplibreMap, flights, followedFlightKey) {
+        val map = maplibreMap ?: return@LaunchedEffect
+        val key = followedFlightKey ?: return@LaunchedEffect
+        val marker = flights.firstOrNull { it.flight.followKey == key } ?: return@LaunchedEffect
+        val position = CameraPosition.Builder()
+            .target(LatLng(marker.flight.lat, marker.flight.lng))
+            .zoom(FLIGHT_FOLLOW_ZOOM)
+            .tilt(FLIGHT_FOLLOW_TILT)
+            .bearing(marker.flight.heading ?: map.cameraPosition.bearing)
+            .build()
+        map.easeCamera(CameraUpdateFactory.newCameraPosition(position), FLIGHT_FOLLOW_EASE_MS)
+    }
+
     LaunchedEffect(layersController, flights) { layersController?.setFlights(flights) }
     LaunchedEffect(layersController, flightEnrichment) { layersController?.setFlightTrack(flightEnrichment?.trackForMap) }
     LaunchedEffect(layersController, earthquakes) { layersController?.setEarthquakes(earthquakes) }
@@ -559,6 +589,15 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
             }
 
             false
+        }
+
+        // Chase-camera exit path: only a real finger gesture (drag/pinch/rotate) should cancel
+        // following — the follow effect's own easeCamera() calls report REASON_API_ANIMATION,
+        // not REASON_API_GESTURE, so this doesn't fight itself every tick.
+        map.addOnCameraMoveStartedListener { reason ->
+            if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) {
+                viewModel.stopFollowingFlight()
+            }
         }
     }
 

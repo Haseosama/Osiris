@@ -15,6 +15,7 @@ import com.osiris.app.data.model.Earthquake
 import com.osiris.app.data.model.FireEvent
 import com.osiris.app.data.model.FlightMarker
 import com.osiris.app.data.model.FlightRoute
+import com.osiris.app.data.model.followKey
 import com.osiris.app.data.model.LiveNewsFeed
 import com.osiris.app.data.model.MaritimeResponse
 import com.osiris.app.data.model.OsintPost
@@ -131,18 +132,35 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedInfo = MutableStateFlow<InfoDialogContent?>(null)
     val selectedInfo: StateFlow<InfoDialogContent?> = _selectedInfo.asStateFlow()
 
+    /** Set by [selectFlight], cleared by every [selectInfo] call (including its own, since
+     * [selectFlight] re-sets it right after) — whichever flight the map's chase camera should
+     * currently be tracking, or null when nothing is being followed. See the
+     * LaunchedEffect(followedFlightKey) in MapScreen for the actual camera movement, and
+     * [stopFollowingFlight] for the map's own exit path (the user manually panning/zooming). */
+    val followedFlightKey = MutableStateFlow<String?>(null)
+
     /** Shared by flights/earthquakes/fires/weather/conflicts/maritime/satellites — see
      * [InfoDialogContent]. News/CCTV/OSINT keep their own selectX functions above. Closing the
      * dialog (`content == null`) also drops any pending satellite/flight enrichment fetch and
      * the drawn flight route, so a slow reply landing after the dialog is gone can't resurrect
-     * either.  */
+     * either. Also always drops the followed flight (any selection change — including a fresh
+     * one — should end whatever chase camera was running; [selectFlight] re-engages it right
+     * after for its own flight). */
     fun selectInfo(content: InfoDialogContent?) {
         _selectedInfo.value = content
+        followedFlightKey.value = null
         if (content == null) {
             pendingSatelliteOrbitKey = null
             pendingFlightKey = null
             flightEnrichment.value = null
         }
+    }
+
+    /** The map's own exit path when the user manually pans/pinches/rotates away from a flight
+     * being followed — see MapScreen's OnCameraMoveStartedListener. Doesn't touch selectedInfo:
+     * the info dialog stays open, only the camera stops chasing. */
+    fun stopFollowingFlight() {
+        followedFlightKey.value = null
     }
 
     // Tracks which satellite the most recent selectSatellite() call was for, so a slow orbit
@@ -174,6 +192,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectFlight(marker: FlightMarker) {
         selectInfo(marker.toInfoDialog())
+        followedFlightKey.value = marker.flight.followKey
         val callsign = marker.flight.callsign?.trim()?.takeIf { it.isNotBlank() } ?: return
         pendingFlightKey = callsign
         viewModelScope.launch {

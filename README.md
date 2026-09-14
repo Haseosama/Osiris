@@ -619,6 +619,18 @@ Au premier lancement, ouvre **Réglages** et renseigne l'URL de ton backend (ex.
       `LocationComponent` natif de MapLibre (le classique point bleu avec orientation boussole)
       sur chaque style chargé — `CameraMode.NONE` pour qu'il n'entre jamais en conflit avec le
       recentrage manuel du bouton existant, qui reste l'unique façon de déplacer la caméra
+- [x] **Caméra de poursuite au tap sur un avion** — jusqu'ici un tap sur un avion n'ouvrait que
+      la fiche d'info. Ajoute un effet façon « vue cockpit » : la caméra se rapproche
+      (zoom 14,5), s'incline (55°) et aligne son cap sur le heading de l'appareil, puis continue
+      de suivre sa position à chaque tick de l'animation par extrapolation (`flights` se met à
+      jour toutes les secondes, voir `startFlightsAnimation`), avec un `easeCamera` cadencé juste
+      sous ce tick pour rester fluide sans jamais avoir l'air de rattraper son retard. S'arrête
+      dès que l'utilisateur déplace la carte à la main (écoute
+      `OnCameraMoveStartedListener`, ne réagit qu'à `REASON_API_GESTURE` pour ne pas se couper
+      lui-même à chaque `easeCamera`) ou ferme la fiche d'info ; suivre un autre avion, ou
+      sélectionner n'importe quelle autre entité, prend le relais proprement. Identité de
+      l'avion suivi basée sur le hex transpondeur (`icao24`), avec repli sur le callsign — la
+      seule chose stable d'un tick à l'autre puisque lat/lng changent en continu
 
 ## Licence
 

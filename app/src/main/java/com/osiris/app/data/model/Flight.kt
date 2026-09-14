@@ -38,6 +38,13 @@ enum class FlightCategory { COMMERCIAL, PRIVATE, JET, MILITARY }
 @Serializable
 data class FlightMarker(val flight: Flight, val category: FlightCategory)
 
+/** A stable identity for matching the same aircraft across poll cycles and dead-reckoning
+ * ticks (its lat/lng change every second while animated, so those can't be the key) — the
+ * transponder hex when known, falling back to the callsign. Used to track which flight the
+ * chase camera is currently following (see MapViewModel.followedFlightKey). */
+val Flight.followKey: String?
+    get() = icao24?.trim()?.takeIf { it.isNotBlank() } ?: callsign?.trim()?.takeIf { it.isNotBlank() }
+
 fun FlightsResponse.toMarkers(): List<FlightMarker> =
     commercialFlights.map { FlightMarker(it, FlightCategory.COMMERCIAL) } +
         privateFlights.map { FlightMarker(it, FlightCategory.PRIVATE) } +
