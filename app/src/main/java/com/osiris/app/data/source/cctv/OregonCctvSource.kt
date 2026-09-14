@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
 
 /** Oregon road cameras (ODOT TripCheck, ~1,100 statewide), called directly from the phone —
  * mirrors `osiris-backend/src/app/api/cctv/oregon.ts`. Keyless — but the endpoint 406s on a
- * JSON-specific Accept header, it only serves `*/*`, hence the explicit override below. */
+ * JSON-specific Accept header, it only serves `* / *`, hence the explicit override below. */
 object OregonCctvSource {
     private const val INVENTORY = "https://www.tripcheck.com/Scripts/map/data/cctvinventory.js"
     private const val IMAGE_BASE = "https://tripcheck.com/RoadCams/cams"

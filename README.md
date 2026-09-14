@@ -654,6 +654,29 @@ Au premier lancement, ouvre **Réglages** et renseigne l'URL de ton backend (ex.
       répondent 200 avec une boucle d'attente qui ne se résout jamais) et **Suisse**
       (majoritairement statique, une vraie caméra + quatre webcams SkylineWebcams déjà en lien
       externe côté backend). Vingt-sept régions CCTV natives au total
+- [x] **Vers zéro backend, phase 5.7 — CCTV, lot 5/N (dernier lot)** — toutes les régions
+      restantes de `/api/cctv`. Le morceau qui débloque le plus de choses d'un coup :
+      [CctvViewerDialog] envoie désormais un en-tête `Referer` auto-référent (et l'omet pour
+      `thb.gov.tw`, dont les encodeurs répondent avec un en-tête malformé s'il y en a un) sur
+      chaque snapshot — exactement ce que faisait le proxy image du backend, mais fait par
+      Coil/OkHttp directement sur l'appareil. Ça débloque d'un coup l'**Italie** (100%
+      SkylineWebcams, jusque-là entièrement de côté), les 16 SkylineWebcams déjà différées de
+      la France et le dernier des cinq de la Suisse, les **Pays-Bas** (Rijkswaterstaat), et le
+      THB de Taïwan. Avec ça posé : quatre gros lots de webcams SkylineWebcams générés
+      (**Asie**, **Amérique latine**, **Afrique**, **Europe** — ~600 caméras à elles quatre,
+      dont un tiers avec un flux réel confirmé par la propre génération du backend, le reste en
+      lien externe) ; **OpenCCTV** (~145 000 caméras dans le monde, index de 7,3 Mo en
+      parallèles/lat/lng puis lots POST de 50, échantillonnés par région — Asie de l'Est/du
+      Sud-Est/de l'Ouest) ; **Hong Kong** (index XML), **Taïwan** (YouTube + THB), **Thaïlande**
+      (webcams fixes), **Singapour** (LTA) ; **Espagne** (DGT + SkylineWebcams, dédoublonnés
+      par proximité de coordonnées) ; **Japon** (33 caméras fluviales MLIT + 18 YouTube) ;
+      **Canada** (sept sources municipales/provinciales indépendantes en parallèle : Ottawa,
+      Québec 511, Ontario 511, Ville de Montréal, Toronto — données ouvertes + trois caméras
+      repère, Alberta 511, DriveBC) ; **Illinois**, **Ohio/Cincinnati**, **Moyen-Orient**
+      (curatées) ; **Roumanie**. La Turquie (source vidée côté backend) et la Grèce (lecteur
+      web IPCamLive utilisé comme URL à la fois d'image et de flux, ne se charge comme aucun
+      des deux) restent sans rien à porter — c'est un choix du backend, pas un oubli. Chaque
+      région que sert `route.ts` a maintenant un équivalent natif
 
 ## Licence
 

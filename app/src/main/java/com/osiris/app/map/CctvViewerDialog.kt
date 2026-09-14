@@ -46,6 +46,7 @@ import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImagePainter
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
+import coil.request.ImageRequest
 import com.osiris.app.data.model.CctvCamera
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -143,6 +144,7 @@ private fun CctvVideoStream(streamUrl: String, onClick: (() -> Unit)?) {
 
 @Composable
 private fun CctvLiveSnapshot(feedUrl: String, cameraName: String?, onClick: (() -> Unit)?) {
+    val context = LocalContext.current
     var snapshotUrl by remember(feedUrl) { mutableStateOf(cacheBust(feedUrl)) }
     LaunchedEffect(feedUrl) {
         while (isActive) {
@@ -162,7 +164,7 @@ private fun CctvLiveSnapshot(feedUrl: String, cameraName: String?, onClick: (() 
     }
     Spacer(Modifier.height(6.dp))
     SubcomposeAsyncImage(
-        model = snapshotUrl,
+        model = remember(snapshotUrl) { snapshotImageRequest(context, snapshotUrl) },
         contentDescription = cameraName,
         modifier = Modifier
             .fillMaxWidth()
@@ -214,6 +216,36 @@ private fun CctvExternalLinkButton(onClick: () -> Unit) {
 private fun cacheBust(url: String): String {
     val separator = if (url.contains('?')) '&' else '?'
     return "$url${separator}t=${System.currentTimeMillis()}"
+}
+
+/** Hosts that answer *worse* with a Referer than without one — Taiwan's THB encoders emit a
+ * malformed response header whenever the request carries one, which breaks OkHttp's parser
+ * entirely (see `osiris-backend/src/app/api/cctv/proxy/route.ts`'s own NO_REFERER_HOSTS). */
+private val NO_REFERER_HOSTS = setOf("thb.gov.tw")
+
+private const val SNAPSHOT_USER_AGENT =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+
+/**
+ * A handful of CCTV CDNs (SkylineWebcams, Rijkswaterstaat's `stream.inmoves.nl`, Spain's
+ * `etraffic.dgt.es`...) answer a bare hotlinked request with a 401/empty response — they only
+ * serve the frame when the request carries a `Referer` naming their own origin, a check the
+ * backend used to satisfy through its image proxy (`/api/cctv/proxy`). On-device there's no such
+ * proxy hop: Coil/OkHttp can just add the same header directly to the request itself, so this
+ * builds a plain URL string into a request carrying it — self-referencing (`Referer` = the same
+ * host being requested) rather than the app's own origin, which is what actually defeats this
+ * particular check; a URL whose host can't be parsed falls back to no special headers at all.
+ */
+private fun snapshotImageRequest(context: android.content.Context, url: String): ImageRequest {
+    val host = runCatching { Uri.parse(url).host }.getOrNull()?.lowercase()
+    val builder = ImageRequest.Builder(context).data(url)
+    if (host == null) return builder.build()
+    builder.addHeader("User-Agent", SNAPSHOT_USER_AGENT)
+    builder.addHeader("Accept", "image/*,*/*")
+    if (NO_REFERER_HOSTS.none { host == it || host.endsWith(".$it") }) {
+        builder.addHeader("Referer", "https://$host/")
+    }
+    return builder.build()
 }
 
 /**

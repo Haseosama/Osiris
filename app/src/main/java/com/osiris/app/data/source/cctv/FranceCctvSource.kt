@@ -14,11 +14,9 @@ import com.osiris.app.data.model.CctvCamera
  *   - APRR/AREA: 123 highway webcams, each a real `gieat.viewsurf.com` MP4 `mediaRedirect` (one
  *     exception uses `action=film`) that plays directly in [com.osiris.app.map.CctvViewerDialog]'s
  *     ExoPlayer, no proxy needed.
- * SkylineWebcams (16 cameras) is deliberately NOT ported here: its CDN needs a `Referer` header
- * to serve images at all (`osiris-backend/src/app/api/cctv/proxy/route.ts`), which
- * [com.osiris.app.map.CctvViewerDialog]'s current Coil `SubcomposeAsyncImage(model = url)` call
- * has no way to send — SkylineWebcams is reused across many other country files too, so this
- * is a follow-up to add once (custom-header image loading), not a per-country one-off.
+ *   - SkylineWebcams: 16 cameras. Its CDN needs a self-referencing `Referer` header to serve an
+ *     image at all — [com.osiris.app.map.CctvViewerDialog]'s image loader now sends it for every
+ *     snapshot, so these load directly instead of needing the backend's own proxy hop.
  */
 object FranceCctvSource {
 
@@ -81,6 +79,33 @@ object FranceCctvSource {
             source = "Bordeaux Tourisme",
             externalUrl = "https://www.viewsurf.com/univers/ville/vue/4567-france-aquitaine-bordeaux-pont-bacalan-bastide",
         ),
+    )
+
+    private fun skylineCam(id: String, lat: Double, lng: Double, name: String, city: String, liveId: String, path: String) = CctvCamera(
+        id = id, lat = lat, lng = lng, name = name, city = city, country = "France",
+        feedUrl = "https://cdn.skylinewebcams.com/$liveId.jpg",
+        externalUrl = "https://www.skylinewebcams.com/en/webcam/france/$path.html",
+        source = "SkylineWebcams",
+    )
+
+    private val SKYLINE_FRANCE = listOf(
+        skylineCam("sky-fr-calanques", 43.2100, 5.4300, "Marseille - Les Calanques", "Marseille", "live1234", "provence-alpes-cote-dazur/marseille/les-calanques-de-marseille"),
+        skylineCam("sky-fr-frejus", 43.4330, 6.7370, "Plage de Fréjus", "Fréjus", "live1235", "provence-alpes-cote-dazur/frejus/plage-de-frejus"),
+        skylineCam("sky-fr-la-rochelle", 46.1591, -1.1520, "La Rochelle - Vieux Port", "La Rochelle", "live1236", "nouvelle-aquitaine/la-rochelle/vieux-port"),
+        skylineCam("sky-fr-royan", 45.6284, -1.0286, "Royan - Plage de Pontaillac", "Royan", "live1237", "nouvelle-aquitaine/royan/plage-de-pontaillac"),
+        skylineCam("sky-fr-mont-dore", 45.5740, 2.8080, "Le Mont-Dore - Sommet de Sancy", "Le Mont-Dore", "social5344", "auvergne-rhone-alpes/mont-dore/le-mont-dore"),
+        skylineCam("sky-fr-sete", 43.4035, 3.6970, "Sète - Port de Plaisance", "Sète", "live1239", "occitanie/sete/port-de-plaisance"),
+        skylineCam("sky-fr-bourget", 45.6910, 5.8810, "Lac du Bourget - Aix les Bains", "Aix-les-Bains", "live1240", "auvergne-rhone-alpes/aix-les-bains/lac-du-bourget"),
+        skylineCam("sky-fr-porto-vecchio", 41.5910, 9.2790, "Porto-Vecchio - Plage de Folaca", "Porto-Vecchio", "live1241", "corsica/porto-vecchio/porto-vecchio-folacca-beach"),
+        skylineCam("sky-fr-menton", 43.7750, 7.4990, "Menton - Vue Panoramique", "Menton", "live1242", "provence-alpes-cote-dazur/menton/vue-panoramique"),
+        skylineCam("sky-fr-collioure", 42.5258, 3.0836, "Collioure - Château Royal", "Collioure", "social5040", "occitanie/collioure/chateau-royal"),
+        skylineCam("sky-fr-boutx", 42.8590, 0.7460, "Boutx - Station de ski Le Mourtis", "Boutx", "social5259", "occitanie/boutx/station-de-ski-le-mourtis"),
+        skylineCam("sky-fr-aix-bourget-2", 45.6880, 5.8798, "Aix-les-Bains - Lac du Bourget (2)", "Aix-les-Bains", "social5755", "auvergne-rhone-alpes/aix-les-bains/lac-du-bourget-france"),
+        skylineCam("sky-fr-hauteluce", 45.7460, 6.6060, "Hauteluce - Domaine skiable des Contamines-Montjoie", "Hauteluce", "social5671", "auvergne-rhone-alpes/hauteluce/domaine-skiable-des-contamines-montjoie"),
+        skylineCam("sky-fr-vallorcine", 46.0080, 6.9210, "Vallorcine - Mont Blanc", "Vallorcine", "social5366", "auvergne-rhone-alpes/vallorcine/vallorcine-mont-blanc"),
+        skylineCam("sky-fr-doussard-annecy", 45.8090, 6.2160, "Doussard - Lac d'Annecy", "Doussard", "social4666", "auvergne-rhone-alpes/doussard/lac-d-annecy-france"),
+        skylineCam("sky-fr-arbusigny", 46.0640, 6.3540, "Arbusigny - Les Aravis / Mont Blanc", "Arbusigny", "social5627", "auvergne-rhone-alpes/arbusigny/les-aravis-mont-blanc"),
+        skylineCam("sky-fr-sixt-fer-a-cheval", 46.0980, 6.7280, "Sixt-Fer-à-Cheval - Mont Buet", "Sixt-Fer-à-Cheval", "social6087", "auvergne-rhone-alpes/sixt-fer-a-cheval/mont-buet"),
     )
 
     private val APRR_HIGHWAY = listOf(
@@ -210,7 +235,7 @@ object FranceCctvSource {
     )
 
     suspend fun fetch(): List<CctvCamera> =
-        YOUTUBE_LIVE + BORDEAUX_TOURISME + APRR_HIGHWAY.map { c ->
+        YOUTUBE_LIVE + SKYLINE_FRANCE + BORDEAUX_TOURISME + APRR_HIGHWAY.map { c ->
             CctvCamera(
                 id = c.id,
                 lat = c.lat,
