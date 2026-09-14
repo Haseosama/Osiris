@@ -640,6 +640,20 @@ Au premier lancement, ouvre **Réglages** et renseigne l'URL de ton backend (ex.
       caméra à une vue plate orientée nord. Un déplacement manuel de la carte pendant le suivi,
       en revanche, ne déclenche délibérément pas ce retour automatique — la caméra reste où le
       geste de l'utilisateur l'a laissée, plutôt que de la lui reprendre des mains
+- [x] **Vers zéro backend, phase 5.6 — CCTV, lot 4/N** — deux états IBI 511 de plus : **Utah**
+      (UDOT, ~2 000, chaque caméra a une URL d'image déterministe plutôt qu'un champ dédié) et
+      **Nevada** (NDOT, ~600, la plupart des caméras diffusent directement leur propre flux
+      HLS) — chacun garde sa propre petite boucle de pagination plutôt que le loader partagé
+      `Ibi511`, comme le fait déjà le backend pour ces deux-là. Cinq API keyless de plus :
+      **Islande** (Vegagerðin, ~488), **Nouvelle-Zélande** (NZTA, ~320, flux XML), **Oregon**
+      (ODOT TripCheck, ~1 100), **Michigan** (MDOT MiDrive, ~800, coordonnées et URL d'image
+      extraites de champs contenant du HTML rendu), **Autriche** (ASFINAG, jeton d'en-tête
+      public du widget carte officiel, pas une clé personnelle). Plus **Indiana** (INDOT
+      TrafficWise, ~730, requête GraphQL POST, URL HLS reconstruite depuis un jeton contenu
+      dans l'URL de la vignette — seul le relais `skysfs4` sert vraiment le flux, les autres
+      répondent 200 avec une boucle d'attente qui ne se résout jamais) et **Suisse**
+      (majoritairement statique, une vraie caméra + quatre webcams SkylineWebcams déjà en lien
+      externe côté backend). Vingt-sept régions CCTV natives au total
 
 ## Licence
 

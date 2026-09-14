@@ -18,6 +18,13 @@ import kotlinx.coroutines.coroutineScope
  * static-list countries — [PolandCctvSource] (~70 real HLS streams), [BulgariaCctvSource],
  * [SerbiaCctvSource], [MacedoniaCctvSource], [GermanyCctvSource], [SlovakiaCctvSource],
  * [CzechiaCctvSource].
+ * Batch 4: [UtahCctvSource] (~2,000) and [NevadaCctvSource] (~600) — two more IBI 511 states,
+ * each with just enough of its own quirks (Utah's deterministic frame URL, Nevada's per-row
+ * HLS) to keep their own small loader rather than fitting [Ibi511]'s shared one. Five more
+ * keyless country APIs — [IcelandCctvSource] (~488), [NewZealandCctvSource] (~320, XML),
+ * [OregonCctvSource] (~1,100), [MichiganCctvSource] (~800, HTML-embedded fields),
+ * [AsfinagCctvSource] (Austria) — plus [IndianaCctvSource] (~730, GraphQL POST, HLS URLs
+ * rebuilt from a poster-frame token) and [SwitzerlandCctvSource] (mostly static).
  *
  * [com.osiris.app.data.repository.CctvRepository] merges this with whatever the backend still
  * serves for the regions not yet listed here, so the map keeps full coverage when a backend is
@@ -43,6 +50,15 @@ object NativeCctvSource {
         GermanyCctvSource::fetch,
         SlovakiaCctvSource::fetch,
         CzechiaCctvSource::fetch,
+        UtahCctvSource::fetch,
+        NevadaCctvSource::fetch,
+        SwitzerlandCctvSource::fetch,
+        IcelandCctvSource::fetch,
+        NewZealandCctvSource::fetch,
+        OregonCctvSource::fetch,
+        MichiganCctvSource::fetch,
+        AsfinagCctvSource::fetch,
+        IndianaCctvSource::fetch,
     )
 
     suspend fun fetch(): List<CctvCamera> = coroutineScope {
