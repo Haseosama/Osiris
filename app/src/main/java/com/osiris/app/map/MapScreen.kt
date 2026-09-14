@@ -83,6 +83,9 @@ import kotlinx.coroutines.launch
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.location.LocationComponentActivationOptions
+import org.maplibre.android.location.modes.CameraMode
+import org.maplibre.android.location.modes.RenderMode
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
@@ -421,6 +424,26 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
         if (map != null && hasLocationPermission && hasCheckedForSavedView && savedViewOnLaunch == null) {
             centerOnUserLocation(context, map)
         }
+    }
+
+    // A persistent "blue dot" marker for the device's own position — distinct from the
+    // MyLocation button above, which only recenters the camera once on tap. Keyed on
+    // layersController (not just maplibreMap) since a style switch replaces the whole Style
+    // object and wipes the component's layers with it, so it needs reactivating against the
+    // new one each time — same reason layersController itself is rebuilt on every style change.
+    LaunchedEffect(maplibreMap, layersController, hasLocationPermission) {
+        val map = maplibreMap ?: return@LaunchedEffect
+        val style = map.style ?: return@LaunchedEffect
+        if (!hasLocationPermission) return@LaunchedEffect
+        val locationComponent = map.locationComponent
+        locationComponent.activateLocationComponent(
+            LocationComponentActivationOptions.builder(context, style).build()
+        )
+        locationComponent.isLocationComponentEnabled = true
+        // NONE: the dot never drives the camera itself, only the MyLocation button does — two
+        // independent behaviours would otherwise fight over what "recentering" means.
+        locationComponent.cameraMode = CameraMode.NONE
+        locationComponent.renderMode = RenderMode.COMPASS
     }
 
     LaunchedEffect(layersController, flights) { layersController?.setFlights(flights) }
