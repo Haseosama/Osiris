@@ -32,3 +32,16 @@ data class Satellite(
 data class SatelliteOrbit(
     val periodMinutes: Double? = null,
 )
+
+/** Next time a satellite rises above the *device's* horizon — computed entirely on-device (no
+ * backend ever had this; see [com.osiris.app.data.source.CelesTrakSatelliteSource.nextPass]) via
+ * predict4java's PassPredictor against the same cached TLE the map position comes from. Times are
+ * epoch millis rather than [java.util.Date] so this stays plain data, matching every other model
+ * in this file. */
+data class SatelliteNextPass(
+    val startTimeMs: Long,
+    val endTimeMs: Long,
+    val maxElevationDeg: Double,
+    val aosAzimuthDeg: Int,
+    val losAzimuthDeg: Int,
+)

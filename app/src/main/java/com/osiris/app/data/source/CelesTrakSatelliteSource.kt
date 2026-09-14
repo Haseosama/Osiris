@@ -1,13 +1,17 @@
 package com.osiris.app.data.source
 
 import com.osiris.app.data.model.Satellite
+import com.osiris.app.data.model.SatelliteNextPass
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
+import uk.me.g4dpz.satellite.GroundStationPosition
+import uk.me.g4dpz.satellite.PassPredictor
 import uk.me.g4dpz.satellite.SatelliteFactory
 import uk.me.g4dpz.satellite.TLE
 import java.util.Date
@@ -129,6 +133,35 @@ object CelesTrakSatelliteSource {
         if (meanMotion <= 0) return null
         return 1440.0 / meanMotion
     }
+
+    /** Next time [noradId] rises above the horizon for an observer at [observerLat]/[observerLng]
+     * — the backend never had this at all (it only ever propagated a snapshot position, never ran
+     * a pass search), so this is fully on-device via predict4java's PassPredictor against the
+     * same cached TLE the map position comes from. Null if the TLE isn't cached, or if
+     * PassPredictor itself determines there's no visible pass at all — a GEO satellite parked
+     * over the other side of the globe, or another case its own willBeSeen() check flags (see
+     * PassPredictor.validateData()'s SatNotFoundException). Wrapped in a timeout: a pass search
+     * steps forward in 30-60s increments and, per predict4java's own docs, can take a while for a
+     * satellite with a long period — better to give up and show "no pass found" than hang the
+     * dialog indefinitely on a pathological TLE. */
+    suspend fun nextPass(noradId: String, observerLat: Double, observerLng: Double): SatelliteNextPass? =
+        withContext(Dispatchers.Default) {
+            val entry = cachedTles.firstOrNull { noradOf(it.line1) == noradId } ?: return@withContext null
+            withTimeoutOrNull(15_000L) {
+                runCatching {
+                    val tle = TLE(arrayOf(entry.name, entry.line1, entry.line2))
+                    val qth = GroundStationPosition(observerLat, observerLng, 0.0)
+                    val pass = PassPredictor(tle, qth).nextSatPass(Date())
+                    SatelliteNextPass(
+                        startTimeMs = pass.startTime.time,
+                        endTimeMs = pass.endTime.time,
+                        maxElevationDeg = pass.maxEl,
+                        aosAzimuthDeg = pass.aosAzimuth,
+                        losAzimuthDeg = pass.losAzimuth,
+                    )
+                }.getOrNull()
+            }
+        }
 
     private fun noradOf(line1: String): String = line1.drop(2).take(5).trim()
 

@@ -1,6 +1,7 @@
 package com.osiris.app.data.repository
 
 import com.osiris.app.data.model.Satellite
+import com.osiris.app.data.model.SatelliteNextPass
 import com.osiris.app.data.source.CelesTrakSatelliteSource
 
 class SatellitesRepository {
@@ -24,4 +25,9 @@ class SatellitesRepository {
      * [CelesTrakSatelliteSource.propagateLive]. */
     suspend fun propagateLive(noradIds: Set<String>): List<Satellite> =
         CelesTrakSatelliteSource.propagateLive(noradIds)
+
+    /** Next time this satellite rises above the given observer's horizon — see
+     * [CelesTrakSatelliteSource.nextPass]. Never existed backend-side at all. */
+    suspend fun fetchNextPass(noradId: String, observerLat: Double, observerLng: Double): SatelliteNextPass? =
+        CelesTrakSatelliteSource.nextPass(noradId, observerLat, observerLng)
 }

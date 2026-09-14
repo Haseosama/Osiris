@@ -11,6 +11,7 @@ import com.osiris.app.data.model.FlightMarker
 import com.osiris.app.data.model.FlightRoute
 import com.osiris.app.data.model.Port
 import com.osiris.app.data.model.Satellite
+import com.osiris.app.data.model.SatelliteNextPass
 import com.osiris.app.data.model.Ship
 import com.osiris.app.data.model.TrafficIncident
 import com.osiris.app.data.model.WeatherEvent
@@ -249,29 +250,55 @@ fun Ship.toInfoDialog(): InfoDialogContent = InfoDialogContent(
     externalUrlLabel = "MarineTraffic",
 )
 
-/** [periodMinutes] is fetched on demand after the dialog first opens (see
+/** [periodMinutes] and [nextPass] are both fetched on demand after the dialog first opens (see
  * [com.osiris.app.map.MapViewModel.selectSatellite]) — the main poll only ever carries a bare
- * lat/lng/alt, unlike every other tappable layer, so this starts null and the dialog is rebuilt
- * once the fetch lands. Speed is derived from it the same way the reference web app's
- * `SatelliteCard.tsx` does — circular-orbit speed implied by the period, "the point of it is
- * scale, not precision". */
-fun Satellite.toInfoDialog(periodMinutes: Double? = null): InfoDialogContent = InfoDialogContent(
+ * lat/lng/alt, unlike every other tappable layer, so both start null/unattempted and the dialog
+ * is rebuilt once each lands. Speed is derived from the period the same way the reference web
+ * app's `SatelliteCard.tsx` does — circular-orbit speed implied by the period, "the point of it
+ * is scale, not precision". [nextPassAttempted] distinguishes "still fetching" (show "…") from
+ * "fetched, nothing found" (no device location, or the satellite genuinely never rises for this
+ * observer — a GEO parked elsewhere, say) since both leave [nextPass] null. */
+fun Satellite.toInfoDialog(
+    periodMinutes: Double? = null,
+    nextPass: SatelliteNextPass? = null,
+    nextPassAttempted: Boolean = false,
+): InfoDialogContent = InfoDialogContent(
     title = name,
     subtitle = mission,
     accentHex = EntityColors.satelliteCategoryHex(category),
-    sections = oneSection(
-        listOfNotNull(
-            noradId?.let { InfoRow("NORAD ID", it) },
-            category?.let { InfoRow("Catégorie", it) },
-            alt?.let { InfoRow("Altitude", "${it.toInt()} km") },
-            alt?.let { InfoRow("Orbite", orbitClass(it)) },
-            periodMinutes?.let { InfoRow("Période orbitale", formatOrbitalPeriod(it)) } ?: InfoRow("Période orbitale", "…"),
-            if (alt != null && periodMinutes != null) InfoRow("Vitesse", "${"%.2f".format(orbitalSpeedKmS(alt, periodMinutes))} km/s") else null,
-        )
+    sections = listOfNotNull(
+        InfoSection(
+            rows = listOfNotNull(
+                noradId?.let { InfoRow("NORAD ID", it) },
+                category?.let { InfoRow("Catégorie", it) },
+                alt?.let { InfoRow("Altitude", "${it.toInt()} km") },
+                alt?.let { InfoRow("Orbite", orbitClass(it)) },
+                periodMinutes?.let { InfoRow("Période orbitale", formatOrbitalPeriod(it)) } ?: InfoRow("Période orbitale", "…"),
+                if (alt != null && periodMinutes != null) InfoRow("Vitesse", "${"%.2f".format(orbitalSpeedKmS(alt, periodMinutes))} km/s") else null,
+            ),
+        ),
+        InfoSection(
+            title = "Prochain passage au-dessus de vous",
+            rows = when {
+                nextPass != null -> listOf(
+                    InfoRow("Lever", formatPassTime(nextPass.startTimeMs)),
+                    InfoRow("Durée", "${((nextPass.endTimeMs - nextPass.startTimeMs) / 60_000.0).toInt()} min"),
+                    InfoRow("Élévation max", "${nextPass.maxElevationDeg.toInt()}°"),
+                    InfoRow("Azimut lever → coucher", "${nextPass.aosAzimuthDeg}° → ${nextPass.losAzimuthDeg}°"),
+                )
+                nextPassAttempted -> listOf(InfoRow("Passage", "Aucun trouvé (position indisponible ou jamais visible)"))
+                else -> listOf(InfoRow("Passage", "…"))
+            },
+        ),
     ),
     externalUrl = noradId?.let { "https://www.n2yo.com/satellite/?s=$it" },
     externalUrlLabel = "Suivre sur N2YO",
 )
+
+private fun formatPassTime(epochMs: Long): String = runCatching {
+    val local = Instant.ofEpochMilli(epochMs).atZone(java.time.ZoneId.systemDefault())
+    "%02d/%02d %02d:%02d".format(local.dayOfMonth, local.monthValue, local.hour, local.minute)
+}.getOrDefault("—")
 
 private fun orbitClass(altKm: Double): String = when {
     altKm < 2_000.0 -> "LEO — orbite basse"

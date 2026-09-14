@@ -1,8 +1,15 @@
 package com.osiris.app.map
 
+import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Application
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import com.osiris.app.data.LayerCache
 import com.osiris.app.data.LayerTogglePreferences
 import com.osiris.app.data.PollIntervalPreferences
@@ -20,6 +27,7 @@ import com.osiris.app.data.model.LiveNewsFeed
 import com.osiris.app.data.model.MaritimeResponse
 import com.osiris.app.data.model.OsintPost
 import com.osiris.app.data.model.Satellite
+import com.osiris.app.data.model.SatelliteNextPass
 import com.osiris.app.data.model.Ship
 import com.osiris.app.data.model.TrafficIncident
 import com.osiris.app.data.model.WeatherEvent
@@ -48,6 +56,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 
 class MapViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -198,21 +208,68 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     // doesn't clobber whatever's on screen by then.
     private var pendingSatelliteOrbitKey: String? = null
 
-    /** Shows what's known about [sat] immediately, then enriches it with its orbital period once
-     * that on-demand fetch (see [SatellitesRepository.fetchOrbitPeriod]) comes back — a satellite
-     * only carries a bare lat/lng/alt in the main poll, unlike every other tappable layer. Also
-     * engages the chase camera, same as [selectFlight]/[selectShip]. */
+    /** Shows what's known about [sat] immediately, then enriches it with its orbital period and
+     * next visible pass once those two independent on-demand fetches come back (see
+     * [SatellitesRepository.fetchOrbitPeriod]/[fetchNextPass]) — a satellite only carries a bare
+     * lat/lng/alt in the main poll, unlike every other tappable layer. Run as two separate
+     * launches rather than one, each publishing its own partial update: the period is cheap local
+     * math (near-instant) while the pass search can take a few seconds (SGP4 stepped forward
+     * looking for the next horizon crossing) plus a location fix first — waiting for both before
+     * showing either would make the period look just as slow as the pass. Also engages the chase
+     * camera, same as [selectFlight]/[selectShip]. */
     fun selectSatellite(sat: Satellite) {
         selectInfo(sat.toInfoDialog())
         val noradId = sat.noradId ?: return
         selectedSatelliteKey.value = noradId
         followedSatelliteKey.value = noradId
         pendingSatelliteOrbitKey = noradId
-        viewModelScope.launch {
-            val period = satellitesRepo.fetchOrbitPeriod("", noradId, System.currentTimeMillis())
-            if (period != null && pendingSatelliteOrbitKey == noradId) {
-                _selectedInfo.value = sat.toInfoDialog(period)
+
+        var latestPeriod: Double? = null
+        var latestPass: SatelliteNextPass? = null
+        var passAttempted = false
+
+        fun publish() {
+            if (pendingSatelliteOrbitKey == noradId) {
+                _selectedInfo.value = sat.toInfoDialog(latestPeriod, latestPass, passAttempted)
             }
+        }
+
+        viewModelScope.launch {
+            latestPeriod = satellitesRepo.fetchOrbitPeriod("", noradId, System.currentTimeMillis())
+            publish()
+        }
+        viewModelScope.launch {
+            val location = currentLocationOrNull()
+            latestPass = location?.let { (lat, lng) -> satellitesRepo.fetchNextPass(noradId, lat, lng) }
+            passAttempted = true
+            publish()
+        }
+    }
+
+    /** One-shot device location for [selectSatellite]'s next-pass search — same cached-fix-first,
+     * fresh-request-fallback shape as MapScreen's centerOnUserLocation, just wrapped as a suspend
+     * function since PassPredictor needs the result before it can even start. Never throws: no
+     * permission, no location provider, or genuinely no fix available (indoors, GPS off) all just
+     * mean "can't compute a pass right now" — the dialog shows "aucun trouvé" either way. */
+    @SuppressLint("MissingPermission")
+    private suspend fun currentLocationOrNull(): Pair<Double, Double>? {
+        val context = getApplication<Application>()
+        val hasPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!hasPermission) return null
+        val client = runCatching { LocationServices.getFusedLocationProviderClient(context) }.getOrNull() ?: return null
+        return suspendCancellableCoroutine { cont ->
+            client.lastLocation
+                .addOnSuccessListener { location ->
+                    if (location != null) {
+                        cont.resume(location.latitude to location.longitude)
+                    } else {
+                        client.getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, CancellationTokenSource().token)
+                            .addOnSuccessListener { fresh -> cont.resume(fresh?.let { it.latitude to it.longitude }) }
+                            .addOnFailureListener { cont.resume(null) }
+                    }
+                }
+                .addOnFailureListener { cont.resume(null) }
         }
     }
 
