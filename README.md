@@ -573,6 +573,21 @@ Au premier lancement, ouvre **Réglages** et renseigne l'URL de ton backend (ex.
       un compromis déjà accepté côté backend et qui casse pareil à chaque changement de balisage
       Telegram. Quatorze couches/outils natifs au total ; ne reste derrière le backend que le
       CCTV
+- [x] **Vers zéro backend, phase 5.3 — CCTV, lot 1/N** — `/api/cctv` agrège ~45 sources
+      (`osiris-backend/src/app/api/cctv/*.ts`, ~5 800 lignes) : portage par lots plutôt qu'en
+      un bloc, comme prévu au plan. Premier lot, les sources les plus utilisées : **TfL**
+      (Royaume-Uni, ~900 caméras JamCam), **WSDOT** (Washington, ~500), **Caltrans**
+      (Californie, ArcGIS FeatureServer), et **France** (liste statique : webcams YouTube
+      Paris/Nice — devenues lien externe seul, `stream_type: 'iframe'` n'ayant pas
+      d'équivalent lecteur ; Bordeaux Tourisme, déjà lien externe seul côté backend ; et les
+      123 webcams autoroutières **APRR/AREA**, chacune un vrai flux MP4
+      `gieat.viewsurf.com`). `CctvRepository` fusionne maintenant les régions natives et
+      celles encore servies par le backend (dédoublonnées par id), donc la couche CCTV
+      fonctionne — avec une couverture réduite mais réelle — même sans backend configuré.
+      SkylineWebcams (16 caméras françaises, et réutilisé par beaucoup d'autres pays) reste
+      délibérément décalé à un prochain lot : son CDN exige un en-tête `Referer` pour servir
+      une image, que le chargeur Coil actuel ne sait pas envoyer — à traiter une fois pour
+      toutes les sources concernées plutôt qu'au coup par coup
 
 ## Licence
 

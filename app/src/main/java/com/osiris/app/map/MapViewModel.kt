@@ -624,6 +624,9 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             MapLayer.EARTHQUAKES, MapLayer.FIRES, MapLayer.CYBER_ATTACKS, MapLayer.NEWS,
             MapLayer.WEATHER, MapLayer.CONFLICTS, MapLayer.TRAFFIC, MapLayer.MARITIME,
             MapLayer.FLIGHTS, MapLayer.SATELLITES, MapLayer.OSINT,
+            // CCTV is only partially native (see CctvRepository) — still listed here so the map
+            // shows that real subset instead of nothing when no backend is configured at all.
+            MapLayer.CCTV,
         )
     }
 }
