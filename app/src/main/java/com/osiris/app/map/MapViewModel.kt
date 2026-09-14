@@ -158,9 +158,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         val noradId = sat.noradId ?: return
         pendingSatelliteOrbitKey = noradId
         viewModelScope.launch {
-            val baseUrl = backendUrl.value
-            if (baseUrl.isBlank()) return@launch
-            val period = satellitesRepo.fetchOrbitPeriod(baseUrl, noradId, System.currentTimeMillis())
+            val period = satellitesRepo.fetchOrbitPeriod("", noradId, System.currentTimeMillis())
             if (period != null && pendingSatelliteOrbitKey == noradId) {
                 _selectedInfo.value = sat.toInfoDialog(period)
             }
@@ -625,7 +623,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         val NATIVE_LAYERS = setOf(
             MapLayer.EARTHQUAKES, MapLayer.FIRES, MapLayer.CYBER_ATTACKS, MapLayer.NEWS,
             MapLayer.WEATHER, MapLayer.CONFLICTS, MapLayer.TRAFFIC, MapLayer.MARITIME,
-            MapLayer.FLIGHTS,
+            MapLayer.FLIGHTS, MapLayer.SATELLITES,
         )
     }
 }

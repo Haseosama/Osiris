@@ -118,6 +118,11 @@ dependencies {
     // (google-libphonenumber), now parsing on-device instead of proxying the lookup.
     implementation("com.googlecode.libphonenumber:libphonenumber:8.13.51")
 
+    // Satellites layer — SGP4/SDP4 TLE propagation. The backend used satellite.js server-side;
+    // this is a Java port of the same NORAD SGP4/SDP4 model (MIT-licensed), published to Maven
+    // Central rather than needing a JitPack SHA pin.
+    implementation("uk.me.g4dpz:predict4java:1.2.2")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 

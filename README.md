@@ -524,17 +524,23 @@ Au premier lancement, ouvre **Réglages** et renseigne l'URL de ton backend (ex.
       `sanctions.ts` du backend. Dix couches/outils natifs au total maintenant ; il ne reste que
       vols en direct, trafic, maritime, satellites, CCTV, OSINT Telegram, scanner de ports, et
       wallet crypto/pseudo côté RECON derrière le backend
-- [x] **Vers zéro backend, phase 3 (3/4)** — les trois couches à clé les plus simples des
-      quatre prévues : **Trafic routier** (TomTom, identique à la logique déjà en place, clé
-      lue depuis `BuildConfig`), **Maritime** (connexion WebSocket directe à aisstream.io
-      depuis le téléphone via OkHttp — le même principe de cache de navires en mémoire tenu
-      tout le cycle de vie du process que le backend, juste avec l'appli elle-même comme seul
-      "client" au lieu d'en servir plusieurs par HTTP), et **Vols en direct** (OpenSky
-      authentifié quand les clés sont configurées, repli anonyme sinon, secours adsb.fi
-      régional en dernier recours — moteur de classification commercial/privé/jet/militaire
-      porté à l'identique, tables de types et heuristiques comprises). Les clés OpenSky/AIS/
-      TomTom viennent de `local.properties` → `BuildConfig`. Il reste les **Satellites**
-      (CelesTrak + propagation SGP4, nécessite une nouvelle dépendance) pour clore la phase 3
+- [x] **Vers zéro backend, phase 3 (4/4 — terminée)** — les quatre couches à clé :
+      **Trafic routier** (TomTom, clé lue depuis `BuildConfig`), **Maritime** (connexion
+      WebSocket directe à aisstream.io depuis le téléphone via OkHttp — même principe de cache
+      de navires en mémoire tenu tout le cycle de vie du process que le backend, juste avec
+      l'appli elle-même comme seul "client"), **Vols en direct** (OpenSky authentifié quand les
+      clés sont configurées, repli anonyme sinon, secours adsb.fi régional en dernier recours —
+      moteur de classification commercial/privé/jet/militaire porté à l'identique), et
+      **Satellites** (CelesTrak, ~40 groupes interrogés en parallèle pour éviter le rate-limit
+      d'une requête unique + repli SatNOGS, propagation orbitale SGP4/SDP4 on-device via
+      `uk.me.g4dpz:predict4java` — port Java du modèle NORAD, MIT, disponible sur Maven Central
+      contrairement à d'autres portages qui n'existent que sur JitPack sans version figée).
+      Les clés OpenSky/AIS/TomTom viennent de `local.properties` → `BuildConfig`. Contrairement
+      au backend, pas de cache TLE sur disque : le process Android est de toute façon tué bien
+      plus souvent par l'OS qu'un serveur qui tourne des jours d'affilée, donc la persistance
+      disque n'apportait pas grand-chose ici — juste un nouveau fetch CelesTrak au démarrage
+      à froid de l'appli. Avec cette phase, toutes les couches carte et la quasi-totalité des
+      outils RECON tournent maintenant sans backend
 
 ## Licence
 

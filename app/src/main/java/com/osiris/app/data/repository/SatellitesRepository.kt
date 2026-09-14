@@ -1,27 +1,22 @@
 package com.osiris.app.data.repository
 
 import com.osiris.app.data.model.Satellite
-import com.osiris.app.data.model.SatelliteOrbit
-import com.osiris.app.data.remote.NetworkModule
-import kotlinx.serialization.json.Json
+import com.osiris.app.data.source.CelesTrakSatelliteSource
 
 class SatellitesRepository {
-    private val json = Json { ignoreUnknownKeys = true }
 
     /** The full catalogue (~18-19k, mostly Starlink + tracked debris) — no cap here any more.
      * [MapViewModel] filters by category client-side based on what the user picked in Réglages,
      * which is what actually keeps the animated/rendered set to something a phone can handle,
-     * rather than a fixed backend-side number the user can't adjust. */
-    suspend fun fetch(baseUrl: String): List<Satellite> =
-        NetworkModule.apiFor(baseUrl).satellites().satellites
+     * rather than a fixed backend-side number the user can't adjust. `baseUrl` is unused —
+     * fetched and propagated (SGP4/SDP4 via predict4java) directly on-device, no backend
+     * involved (see [CelesTrakSatelliteSource]); kept only so call sites don't need to change. */
+    suspend fun fetch(baseUrl: String): List<Satellite> = CelesTrakSatelliteSource.fetch().first
 
-    /** One satellite's orbital period, fetched on tap rather than bundled into every poll — see
-     * [SatelliteOrbit]. [epochMs] anchors the propagation to the moment the marker's position on
-     * screen actually represents (the backend needs this or it silently draws/measures a slightly
-     * wrong orbit — see the orbit route's own doc comment on why "now" alone isn't right there). */
-    suspend fun fetchOrbitPeriod(baseUrl: String, noradId: String, epochMs: Long): Double? = runCatching {
-        val response = NetworkModule.apiFor(baseUrl).raw("api/satellites/orbit?id=$noradId&t=$epochMs")
-        val body = response.body()?.string() ?: return null
-        json.decodeFromString<SatelliteOrbit>(body).periodMinutes
-    }.getOrNull()
+    /** One satellite's orbital period, fetched on tap rather than bundled into every poll. Pure
+     * math on the cached TLE's mean motion (see [CelesTrakSatelliteSource.fetchOrbitPeriod]) —
+     * no propagation, no network call, so unlike the backend's version this never needs
+     * [epochMs] to anchor anything; kept only so call sites don't need to change. */
+    suspend fun fetchOrbitPeriod(baseUrl: String, noradId: String, epochMs: Long): Double? =
+        CelesTrakSatelliteSource.fetchOrbitPeriod(noradId)
 }
