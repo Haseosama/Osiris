@@ -132,12 +132,28 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedInfo = MutableStateFlow<InfoDialogContent?>(null)
     val selectedInfo: StateFlow<InfoDialogContent?> = _selectedInfo.asStateFlow()
 
-    /** Set by [selectFlight], cleared by every [selectInfo] call (including its own, since
-     * [selectFlight] re-sets it right after) — whichever flight the map's chase camera should
-     * currently be tracking, or null when nothing is being followed. See the
-     * LaunchedEffect(followedFlightKey) in MapScreen for the actual camera movement, and
-     * [stopFollowingFlight] for the map's own exit path (the user manually panning/zooming). */
+    /** Which flight (if any) the currently-open info dialog is about — distinct from
+     * [followedFlightKey] below, since the dialog's own "Vue cockpit" toggle can turn the chase
+     * camera on/off without closing the dialog, so this needs to outlive that toggle. Set by
+     * [selectFlight], cleared by every [selectInfo] call. */
+    val selectedFlightKey = MutableStateFlow<String?>(null)
+
+    /** Whichever flight the map's chase camera is *currently* tracking, or null when nothing is
+     * being followed — a subset of [selectedFlightKey] (a flight can be selected/its dialog open
+     * without being followed, via the toggle). See the LaunchedEffect(followedFlightKey) in
+     * MapScreen for the actual camera movement. */
     val followedFlightKey = MutableStateFlow<String?>(null)
+
+    /** Bumped whenever the chase camera should ease back to a flat, north-up view — a plain
+     * counter rather than a boolean so two resets in a row (dialog closed, then another flight
+     * tapped and un-followed again) each still fire their own LaunchedEffect in MapScreen, which
+     * a StateFlow would otherwise collapse as "no change". Only bumped from the *programmatic*
+     * stop paths ([selectInfo], [setFollowingFlight]) — deliberately NOT from
+     * [stopFollowingFlight], the map's own gesture-detected exit: there, the user's own
+     * drag/pinch/rotate already IS the camera state they want, so flattening it right back out
+     * from under their fingers would fight the gesture instead of respecting it. */
+    private val _cameraResetTick = MutableStateFlow(0)
+    val cameraResetTick: StateFlow<Int> = _cameraResetTick.asStateFlow()
 
     /** Shared by flights/earthquakes/fires/weather/conflicts/maritime/satellites — see
      * [InfoDialogContent]. News/CCTV/OSINT keep their own selectX functions above. Closing the
@@ -145,9 +161,11 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
      * the drawn flight route, so a slow reply landing after the dialog is gone can't resurrect
      * either. Also always drops the followed flight (any selection change — including a fresh
      * one — should end whatever chase camera was running; [selectFlight] re-engages it right
-     * after for its own flight). */
+     * after for its own flight) and requests a camera reset if one was actually running. */
     fun selectInfo(content: InfoDialogContent?) {
         _selectedInfo.value = content
+        if (followedFlightKey.value != null) _cameraResetTick.value++
+        selectedFlightKey.value = null
         followedFlightKey.value = null
         if (content == null) {
             pendingSatelliteOrbitKey = null
@@ -156,9 +174,24 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** The info dialog's own "Vue cockpit" toggle — turns the chase camera on/off for whichever
+     * flight [selectedFlightKey] currently is, without closing the dialog. Unlike
+     * [stopFollowingFlight], turning it off here does request a camera reset: this is a
+     * deliberate user action on a button, not a mid-gesture interruption. */
+    fun setFollowingFlight(following: Boolean) {
+        if (following) {
+            followedFlightKey.value = selectedFlightKey.value
+        } else {
+            followedFlightKey.value = null
+            _cameraResetTick.value++
+        }
+    }
+
     /** The map's own exit path when the user manually pans/pinches/rotates away from a flight
-     * being followed — see MapScreen's OnCameraMoveStartedListener. Doesn't touch selectedInfo:
-     * the info dialog stays open, only the camera stops chasing. */
+     * being followed — see MapScreen's OnCameraMoveStartedListener. Doesn't touch selectedInfo
+     * or selectedFlightKey: the info dialog stays open (its toggle can re-engage following), only
+     * the camera stops chasing — and, deliberately, doesn't request a reset either; see
+     * [cameraResetTick]. */
     fun stopFollowingFlight() {
         followedFlightKey.value = null
     }
@@ -192,6 +225,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectFlight(marker: FlightMarker) {
         selectInfo(marker.toInfoDialog())
+        selectedFlightKey.value = marker.flight.followKey
         followedFlightKey.value = marker.flight.followKey
         val callsign = marker.flight.callsign?.trim()?.takeIf { it.isNotBlank() } ?: return
         pendingFlightKey = callsign

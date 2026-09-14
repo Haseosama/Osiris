@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -44,9 +45,18 @@ import androidx.compose.ui.window.Dialog
  * progress bar, ETA underneath. Every fact below is grouped into bordered "tile" cards, two
  * facts per row, instead of the plain "label : value" text list this used to be. The whole card
  * borders in [InfoDialogContent.accentHex] when the entity has one (severity, or a satellite's
- * own category color) — the app's default gold otherwise. */
+ * own category color) — the app's default gold otherwise.
+ *
+ * [onToggleFollow] is non-null only for a flight's dialog (see MapScreen) — renders a "Vue
+ * cockpit" chase-camera toggle right under the route header, [isFollowing] driving its on/off
+ * state. Every other entity type passes null and gets no such row. */
 @Composable
-fun EntityInfoDialog(content: InfoDialogContent, onDismiss: () -> Unit) {
+fun EntityInfoDialog(
+    content: InfoDialogContent,
+    onDismiss: () -> Unit,
+    isFollowing: Boolean = false,
+    onToggleFollow: (() -> Unit)? = null,
+) {
     val accent = content.accentHex?.let(::parseHexColorOrNull) ?: MaterialTheme.colorScheme.primary
     val context = LocalContext.current
     Dialog(onDismissRequest = onDismiss) {
@@ -92,6 +102,8 @@ fun EntityInfoDialog(content: InfoDialogContent, onDismiss: () -> Unit) {
                     }
 
                     content.routeHeader?.let { RouteHeader(it, accent) }
+
+                    onToggleFollow?.let { toggle -> CockpitViewToggle(isFollowing, toggle, accent) }
 
                     content.sections.forEach { section -> InfoSectionCard(section, accent) }
 
@@ -200,6 +212,38 @@ private fun InfoSectionCard(section: InfoSection, accent: Color) {
                     if (pair.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
+        }
+    }
+}
+
+/** Toggle row for the chase camera (see MapScreen's LaunchedEffect(followedFlightKey)) — same
+ * pill shape as [ExternalLinkButton] so it reads as one family of action rows, but its own fill
+ * lights up in [accent] while following so the dialog itself confirms it's live, not just the
+ * map having quietly tilted somewhere behind it. */
+@Composable
+private fun CockpitViewToggle(isFollowing: Boolean, onToggle: () -> Unit, accent: Color) {
+    Surface(
+        color = if (isFollowing) accent.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        shape = MaterialTheme.shapes.small,
+        border = BorderStroke(1.dp, if (isFollowing) accent.copy(alpha = 0.5f) else accent.copy(alpha = 0.15f)),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onToggle),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp).fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                (if (isFollowing) "Vue cockpit activée" else "Vue cockpit").uppercase(),
+                style = MaterialTheme.typography.labelMedium,
+                color = if (isFollowing) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Icon(
+                Icons.Filled.Videocam,
+                contentDescription = null,
+                tint = if (isFollowing) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp),
+            )
         }
     }
 }

@@ -171,7 +171,9 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
     val selectedCctvCamera by viewModel.selectedCctvCamera.collectAsStateWithLifecycle()
     val selectedOsintPost by viewModel.selectedOsintPost.collectAsStateWithLifecycle()
     val selectedInfo by viewModel.selectedInfo.collectAsStateWithLifecycle()
+    val selectedFlightKey by viewModel.selectedFlightKey.collectAsStateWithLifecycle()
     val followedFlightKey by viewModel.followedFlightKey.collectAsStateWithLifecycle()
+    val cameraResetTick by viewModel.cameraResetTick.collectAsStateWithLifecycle()
     val disabledSatelliteCategories by viewModel.disabledSatelliteCategories.collectAsStateWithLifecycle()
     val flightEnrichment by viewModel.flightEnrichment.collectAsStateWithLifecycle()
     val isReplaying by viewModel.isReplaying.collectAsStateWithLifecycle()
@@ -481,6 +483,21 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
         map.easeCamera(CameraUpdateFactory.newCameraPosition(position), FLIGHT_FOLLOW_EASE_MS)
     }
 
+    // Eases the camera back to a flat, north-up view once chase mode ends the *programmatic*
+    // way — the dialog's own toggle switched off, or the dialog closed/another entity got
+    // selected (see MapViewModel.cameraResetTick's own doc for why the gesture-driven exit
+    // deliberately does NOT trigger this: there the user's own drag/tilt/rotate already is the
+    // camera state they want). A plain counter rather than keying on followedFlightKey itself,
+    // so two resets in a row aren't collapsed as "no change" by the StateFlow underneath.
+    LaunchedEffect(maplibreMap, cameraResetTick) {
+        if (cameraResetTick == 0) return@LaunchedEffect
+        val map = maplibreMap ?: return@LaunchedEffect
+        val current = map.cameraPosition
+        if (current.tilt == 0.0 && current.bearing == 0.0) return@LaunchedEffect
+        val flat = CameraPosition.Builder(current).tilt(0.0).bearing(0.0).build()
+        map.easeCamera(CameraUpdateFactory.newCameraPosition(flat), FLIGHT_FOLLOW_EASE_MS)
+    }
+
     LaunchedEffect(layersController, flights) { layersController?.setFlights(flights) }
     LaunchedEffect(layersController, flightEnrichment) { layersController?.setFlightTrack(flightEnrichment?.trackForMap) }
     LaunchedEffect(layersController, earthquakes) { layersController?.setEarthquakes(earthquakes) }
@@ -611,7 +628,16 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
         OsintPostDialog(post = post, onDismiss = { viewModel.selectOsintPost(null) })
     }
     selectedInfo?.let { info ->
-        EntityInfoDialog(content = info, onDismiss = { viewModel.selectInfo(null) })
+        EntityInfoDialog(
+            content = info,
+            onDismiss = { viewModel.selectInfo(null) },
+            isFollowing = followedFlightKey != null,
+            onToggleFollow = if (selectedFlightKey != null) {
+                { viewModel.setFollowingFlight(followedFlightKey == null) }
+            } else {
+                null
+            },
+        )
     }
 
     Box(modifier = Modifier.fillMaxSize()) {

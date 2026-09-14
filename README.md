@@ -631,6 +631,15 @@ Au premier lancement, ouvre **Réglages** et renseigne l'URL de ton backend (ex.
       sélectionner n'importe quelle autre entité, prend le relais proprement. Identité de
       l'avion suivi basée sur le hex transpondeur (`icao24`), avec repli sur le callsign — la
       seule chose stable d'un tick à l'autre puisque lat/lng changent en continu
+- [x] **Caméra de poursuite : bouton visible + retour à la normale** — deux retours après la
+      mise en ligne. Le bouton lui-même manquait de visibilité : la fiche info d'un avion
+      affiche maintenant un bouton dédié « Vue cockpit » (sous l'en-tête de route, au-dessus des
+      sections de faits), qui bascule le suivi sans fermer la fiche et reflète son propre état
+      (rempli dans la couleur d'accent quand actif). Et la caméra restait inclinée/tournée une
+      fois qu'on quittait l'avion : fermer la fiche ou désactiver le bouton ramène maintenant la
+      caméra à une vue plate orientée nord. Un déplacement manuel de la carte pendant le suivi,
+      en revanche, ne déclenche délibérément pas ce retour automatique — la caméra reste où le
+      geste de l'utilisateur l'a laissée, plutôt que de la lui reprendre des mains
 
 ## Licence
 
