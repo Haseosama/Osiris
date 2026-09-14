@@ -95,16 +95,24 @@ object AisStreamSource {
         webSocket = webSocketClient.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(ws: WebSocket, response: Response) {
                 connecting = false
-                Log.d(TAG, "connected (HTTP ${response.code}), sending subscription")
-                ws.send(subscriptionMessage(apiKey))
+                val sub = subscriptionMessage(apiKey)
+                val sent = ws.send(sub)
+                Log.d(TAG, "connected (HTTP ${response.code}), sending subscription (${sub.length} chars, enqueued=$sent): $sub")
             }
 
             override fun onMessage(ws: WebSocket, text: String) {
                 messagesReceived++
                 if (messagesReceived <= 3 || messagesReceived % 500 == 0L) {
-                    Log.d(TAG, "message #$messagesReceived (${text.take(200)})")
+                    Log.d(TAG, "message #$messagesReceived (${text.take(300)})")
                 }
                 handleMessage(text)
+            }
+
+            override fun onMessage(ws: WebSocket, bytes: okio.ByteString) {
+                // Shouldn't happen (aisstream.io sends text frames) — logged in case a binary
+                // frame is arriving instead and silently being dropped by the default no-op
+                // WebSocketListener.onMessage(ByteString) implementation.
+                Log.w(TAG, "unexpected binary message: ${bytes.size} bytes")
             }
 
             override fun onClosing(ws: WebSocket, code: Int, reason: String) {
