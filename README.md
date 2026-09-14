@@ -541,6 +541,15 @@ Au premier lancement, ouvre **Réglages** et renseigne l'URL de ton backend (ex.
       disque n'apportait pas grand-chose ici — juste un nouveau fetch CelesTrak au démarrage
       à froid de l'appli. Avec cette phase, toutes les couches carte et la quasi-totalité des
       outils RECON tournent maintenant sans backend
+- [x] **Vers zéro backend, phase 4** — les deux derniers outils RECON à logique lourde :
+      **Wallet crypto** (port de `chainIntel.ts` — détection BTC/ETH/SOL par regex d'adresse,
+      collecte directe mempool.space/Blockscout v2/RPC JSON Solana public, prix CoinGecko en
+      cache, recoupement OFAC via `SanctionsIndex`, même moteur de score de risque pondéré
+      qu'avant), et **Pseudo/Sherlock** (port de `sherlock.ts` — base de règles du Sherlock
+      Project, ~70 sites de la palette prioritaire interrogés en parallèle borné à 12,
+      calibration anti-faux-positif par deux pseudos de contrôle aléatoires). Douze
+      couches/outils natifs au total ; ne restent derrière le backend que le fil OSINT
+      Telegram, le CCTV, et le scanner de ports (phase 5)
 
 ## Licence
 

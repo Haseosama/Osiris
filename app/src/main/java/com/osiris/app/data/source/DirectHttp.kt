@@ -3,7 +3,9 @@ package com.osiris.app.data.source
 import com.osiris.app.data.remote.NetworkModule
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 
 /**
  * Thin GET helper shared by every direct-source client under `data/source/` and
@@ -27,6 +29,19 @@ object DirectHttp {
 
     suspend inline fun <reified T> getJson(url: String, headers: Map<String, String> = emptyMap()): T =
         NetworkModule.json.decodeFromString(getText(url, headers))
+
+    /** POST with a raw JSON string body, returning the raw response text — used for JSON-RPC
+     * calls (Solana) and form-less JSON APIs that need a body Retrofit isn't wired up for here. */
+    suspend fun postJson(url: String, jsonBody: String, headers: Map<String, String> = emptyMap()): String =
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder().url(url).apply {
+                headers.forEach { (k, v) -> header(k, v) }
+            }.post(jsonBody.toRequestBody("application/json".toMediaType())).build()
+            NetworkModule.okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) error("HTTP ${response.code}")
+                response.body?.string() ?: error("Empty response body")
+            }
+        }
 
     data class HeadResult(val code: Int, val headers: Map<String, String>, val redirected: Boolean, val finalUrl: String)
 

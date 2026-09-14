@@ -10,6 +10,8 @@ import com.osiris.app.recon.source.MacSource
 import com.osiris.app.recon.source.PhoneSource
 import com.osiris.app.recon.source.SanctionsSource
 import com.osiris.app.recon.source.SslCertsSource
+import com.osiris.app.recon.source.UsernameSherlockSource
+import com.osiris.app.recon.source.WalletIntelSource
 import com.osiris.app.recon.source.WhoisSource
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -24,12 +26,8 @@ class ReconRepository {
             ReconTool.DNS, ReconTool.SSL_CERTS, ReconTool.CVE, ReconTool.LEAKS,
             ReconTool.GITHUB, ReconTool.MAC, ReconTool.PHONE,
             ReconTool.WHOIS, ReconTool.IP_INTEL, ReconTool.SANCTIONS,
+            ReconTool.CRYPTO_WALLET, ReconTool.USERNAME,
         )
-    }
-
-    private val json = Json {
-        ignoreUnknownKeys = true
-        coerceInputValues = true
     }
 
     private val prettyJson = Json {
@@ -54,6 +52,8 @@ class ReconRepository {
                 ReconTool.WHOIS -> ReconResult.Whois(WhoisSource.lookup(value))
                 ReconTool.IP_INTEL -> ReconResult.IpIntel(IpIntelSource.lookup(value))
                 ReconTool.SANCTIONS -> ReconResult.Sanctions(SanctionsSource.search(value, schema = null))
+                ReconTool.CRYPTO_WALLET -> ReconResult.CryptoWallet(WalletIntelSource.lookup(value, chainOverride = null))
+                ReconTool.USERNAME -> ReconResult.Username(UsernameSherlockSource.lookup(value))
                 else -> {
                     val url = buildUrl(tool, value, secondaryValue)
                     val response = NetworkModule.apiFor(baseUrl).raw(url)
@@ -61,7 +61,7 @@ class ReconRepository {
                     if (body.isBlank()) {
                         error("HTTP ${response.code()}")
                     }
-                    parse(tool, body)
+                    ReconResult.Raw(prettyPrint(body))
                 }
             }
         }
@@ -81,20 +81,6 @@ class ReconRepository {
             }
         }
     }
-
-    /** Only reached for tools still proxied through the backend (see [NATIVE_TOOLS]: everything
-     * else is [PORT_SCAN][ReconTool.PORT_SCAN] and [SPACE_WEATHER][ReconTool.SPACE_WEATHER],
-     * neither of which has a typed shape) — tries the typed shape for the ones that have one;
-     * anything else (or a decode mismatch, e.g. an unexpected `{ error: ... }` body) falls back
-     * to pretty-printed raw JSON. */
-    private fun parse(tool: ReconTool, body: String): ReconResult = when (tool) {
-        ReconTool.CRYPTO_WALLET -> decodeOrRaw(body) { ReconResult.CryptoWallet(json.decodeFromString(body)) }
-        ReconTool.USERNAME -> decodeOrRaw(body) { ReconResult.Username(json.decodeFromString(body)) }
-        else -> ReconResult.Raw(prettyPrint(body))
-    }
-
-    private inline fun decodeOrRaw(body: String, decode: () -> ReconResult): ReconResult =
-        runCatching(decode).getOrElse { ReconResult.Raw(prettyPrint(body)) }
 
     private fun prettyPrint(raw: String): String = runCatching {
         val element = prettyJson.parseToJsonElement(raw)
