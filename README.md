@@ -563,6 +563,16 @@ Au premier lancement, ouvre **Réglages** et renseigne l'URL de ton backend (ex.
       `tech` et `vuln` sont retirés du menu : aucune façon honnête de les approcher sans le code
       du microservice d'origine. Treize couches/outils natifs au total ; ne restent derrière le
       backend que le fil OSINT Telegram et le CCTV
+- [x] **Vers zéro backend, phase 5.2 — fil OSINT Telegram** — malgré son nom, `/api/news` n'a
+      rien à voir avec la liste statique de streams YouTube de la phase 1 : c'est le fil OSINT
+      géoparsé qui scrape `t.me/s/{channel}` (OSINTtechnical, Faytuks, Liveuamap, CyberKnow) en
+      HTML, avec repli sur quelques flux RSS (BBC/Al Jazeera/GDACS) seulement si Telegram bloque
+      la connexion. Port fidèle des mêmes heuristiques que le backend : score de risque par
+      mots-clés, coordonnées par une petite table de lieux nommés (pas du vrai géoparsing), id
+      MD5 de lien+date. Scrape HTML par regex fragile par nature (aucune API publique pour ça),
+      un compromis déjà accepté côté backend et qui casse pareil à chaque changement de balisage
+      Telegram. Quatorze couches/outils natifs au total ; ne reste derrière le backend que le
+      CCTV
 
 ## Licence
 
