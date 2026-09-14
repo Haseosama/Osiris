@@ -47,9 +47,9 @@ import androidx.compose.ui.window.Dialog
  * borders in [InfoDialogContent.accentHex] when the entity has one (severity, or a satellite's
  * own category color) — the app's default gold otherwise.
  *
- * [onToggleFollow] is non-null only for a flight's dialog (see MapScreen) — renders a "Vue
- * cockpit" chase-camera toggle right under the route header, [isFollowing] driving its on/off
- * state. Every other entity type passes null and gets no such row. */
+ * [onToggleFollow] is non-null only for a flight/ship/satellite's dialog (see MapScreen) —
+ * renders a chase-camera follow toggle right under the route header, [isFollowing] driving its
+ * on/off state. Every other entity type passes null and gets no such row. */
 @Composable
 fun EntityInfoDialog(
     content: InfoDialogContent,
@@ -103,7 +103,7 @@ fun EntityInfoDialog(
 
                     content.routeHeader?.let { RouteHeader(it, accent) }
 
-                    onToggleFollow?.let { toggle -> CockpitViewToggle(isFollowing, toggle, accent) }
+                    onToggleFollow?.let { toggle -> FollowToggle(isFollowing, toggle, accent) }
 
                     content.sections.forEach { section -> InfoSectionCard(section, accent) }
 
@@ -216,12 +216,14 @@ private fun InfoSectionCard(section: InfoSection, accent: Color) {
     }
 }
 
-/** Toggle row for the chase camera (see MapScreen's LaunchedEffect(followedFlightKey)) — same
- * pill shape as [ExternalLinkButton] so it reads as one family of action rows, but its own fill
- * lights up in [accent] while following so the dialog itself confirms it's live, not just the
- * map having quietly tilted somewhere behind it. */
+/** Toggle row for the chase camera (see MapScreen's per-entity LaunchedEffect(followedXKey)) —
+ * same pill shape as [ExternalLinkButton] so it reads as one family of action rows, but its own
+ * fill lights up in [accent] while following so the dialog itself confirms it's live, not just
+ * the map having quietly tilted somewhere behind it. One label for all three followable entity
+ * types (flight/ship/satellite) rather than a "vue cockpit" that only reads naturally for a
+ * plane — "suivre"/"en suivi" work equally for a ship or a satellite. */
 @Composable
-private fun CockpitViewToggle(isFollowing: Boolean, onToggle: () -> Unit, accent: Color) {
+private fun FollowToggle(isFollowing: Boolean, onToggle: () -> Unit, accent: Color) {
     Surface(
         color = if (isFollowing) accent.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
         shape = MaterialTheme.shapes.small,
@@ -234,7 +236,7 @@ private fun CockpitViewToggle(isFollowing: Boolean, onToggle: () -> Unit, accent
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                (if (isFollowing) "Vue cockpit activée" else "Vue cockpit").uppercase(),
+                (if (isFollowing) "Suivi activé" else "Suivre").uppercase(),
                 style = MaterialTheme.typography.labelMedium,
                 color = if (isFollowing) accent else MaterialTheme.colorScheme.onSurfaceVariant,
             )

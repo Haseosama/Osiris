@@ -110,14 +110,26 @@ private const val ESRI_LABELS_URL =
 
 private enum class MapStyleMode { STREET, SATELLITE }
 
-/** Chase-camera settings for a followed flight (see the LaunchedEffect(followedFlightKey)
- * below) — a tilted, zoomed-in, heading-aligned view that tracks the aircraft. [FOLLOW_EASE_MS]
- * is kept just under the flights animation loop's 1s tick (MapViewModel.startFlightsAnimation)
- * so each ease finishes just before the next position update arrives, instead of visibly
- * catching up or overshooting. */
+/** Chase-camera settings for a followed flight/ship/satellite (see the per-entity
+ * LaunchedEffect(followedXKey) below) — a tilted, zoomed-in, heading-aligned view that tracks the
+ * entity. Each *_FOLLOW_EASE_MS is kept just under that entity's own animation tick
+ * (MapViewModel.start{Flights,Maritime,Satellites}Animation) so each ease finishes just before
+ * the next position update arrives, instead of visibly catching up, overshooting, or — since
+ * MapLibre's easeCamera replaces any still-running ease with the newest one — getting
+ * continuously interrupted by a next tick that lands before this one's animation is done. */
 private const val FLIGHT_FOLLOW_ZOOM = 14.5
 private const val FLIGHT_FOLLOW_TILT = 55.0
-private const val FLIGHT_FOLLOW_EASE_MS = 950
+private const val FLIGHT_FOLLOW_EASE_MS = 90
+
+private const val SHIP_FOLLOW_ZOOM = 15.5
+private const val SHIP_FOLLOW_TILT = 50.0
+private const val SHIP_FOLLOW_EASE_MS = 90
+
+// No tilt: unlike a flight/ship hugging the ground, a satellite's orbit has no fixed "down" to
+// tilt toward, and the huge ground speed (~km/s for LEO) makes a top-down, wide-zoom view read
+// far better than a cockpit-style chase.
+private const val SATELLITE_FOLLOW_ZOOM = 6.0
+private const val SATELLITE_FOLLOW_EASE_MS = 220
 
 private fun satelliteStyleBuilder(): Style.Builder =
     Style.Builder()
@@ -172,6 +184,10 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
     val selectedInfo by viewModel.selectedInfo.collectAsStateWithLifecycle()
     val selectedFlightKey by viewModel.selectedFlightKey.collectAsStateWithLifecycle()
     val followedFlightKey by viewModel.followedFlightKey.collectAsStateWithLifecycle()
+    val selectedShipKey by viewModel.selectedShipKey.collectAsStateWithLifecycle()
+    val followedShipKey by viewModel.followedShipKey.collectAsStateWithLifecycle()
+    val selectedSatelliteKey by viewModel.selectedSatelliteKey.collectAsStateWithLifecycle()
+    val followedSatelliteKey by viewModel.followedSatelliteKey.collectAsStateWithLifecycle()
     val cameraResetTick by viewModel.cameraResetTick.collectAsStateWithLifecycle()
     val disabledSatelliteCategories by viewModel.disabledSatelliteCategories.collectAsStateWithLifecycle()
     val flightEnrichment by viewModel.flightEnrichment.collectAsStateWithLifecycle()
@@ -218,48 +234,42 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
         if (query.length < 2) {
             emptyList()
         } else {
-            buildList {
-                flights.forEach { marker ->
-                    val callsign = marker.flight.callsign?.trim().orEmpty()
-                    if (callsign.contains(query, ignoreCase = true)) {
-                        add(
-                            MapSearchResult(callsign, marker.category.name, marker.flight.lat, marker.flight.lng) {
-                                viewModel.selectFlight(marker)
-                            }
-                        )
-                    }
+            // Capped per category, rarer/higher-value matches first, rather than one global
+            // take(30) over a single concatenated list — cctvCameras alone runs to ~17k entries,
+            // so a query matching lots of camera cities (e.g. a city or country name) used to fill
+            // every slot before a same-named port or ship ever got a chance to appear.
+            val flightMatches = flights.mapNotNull { marker ->
+                val callsign = marker.flight.callsign?.trim().orEmpty()
+                if (!callsign.contains(query, ignoreCase = true)) return@mapNotNull null
+                MapSearchResult(callsign, marker.category.name, marker.flight.lat, marker.flight.lng) {
+                    viewModel.selectFlight(marker)
                 }
-                cctvCameras.forEach { camera ->
-                    val name = camera.name.orEmpty()
-                    val city = camera.city.orEmpty()
-                    if (name.contains(query, ignoreCase = true) || city.contains(query, ignoreCase = true)) {
-                        add(
-                            MapSearchResult(
-                                name.ifBlank { "Caméra" },
-                                listOfNotNull(camera.city, camera.source).joinToString(" · ").ifBlank { null },
-                                camera.lat,
-                                camera.lng,
-                            ) { viewModel.selectCctvCamera(camera) }
-                        )
-                    }
-                }
-                satellites.forEach { sat ->
-                    if (sat.name.contains(query, ignoreCase = true)) {
-                        add(MapSearchResult(sat.name, sat.category, sat.lat, sat.lng) { viewModel.selectSatellite(sat) })
-                    }
-                }
-                maritime.ports.forEach { port ->
-                    if (port.name.contains(query, ignoreCase = true)) {
-                        add(MapSearchResult(port.name, port.type, port.lat, port.lng) { viewModel.selectInfo(port.toInfoDialog()) })
-                    }
-                }
-                maritime.ships.forEach { ship ->
-                    val name = ship.name.orEmpty()
-                    if (name.contains(query, ignoreCase = true)) {
-                        add(MapSearchResult(name, ship.type, ship.lat, ship.lng) { viewModel.selectInfo(ship.toInfoDialog()) })
-                    }
-                }
-            }.take(30)
+            }.take(8)
+            val portMatches = maritime.ports.mapNotNull { port ->
+                if (!port.name.contains(query, ignoreCase = true)) return@mapNotNull null
+                MapSearchResult(port.name, port.type, port.lat, port.lng) { viewModel.selectInfo(port.toInfoDialog()) }
+            }.take(8)
+            val shipMatches = maritime.ships.mapNotNull { ship ->
+                val name = ship.name.orEmpty()
+                if (!name.contains(query, ignoreCase = true)) return@mapNotNull null
+                MapSearchResult(name, ship.type, ship.lat, ship.lng) { viewModel.selectShip(ship) }
+            }.take(8)
+            val satelliteMatches = satellites.mapNotNull { sat ->
+                if (!sat.name.contains(query, ignoreCase = true)) return@mapNotNull null
+                MapSearchResult(sat.name, sat.category, sat.lat, sat.lng) { viewModel.selectSatellite(sat) }
+            }.take(8)
+            val cctvMatches = cctvCameras.mapNotNull { camera ->
+                val name = camera.name.orEmpty()
+                val city = camera.city.orEmpty()
+                if (!name.contains(query, ignoreCase = true) && !city.contains(query, ignoreCase = true)) return@mapNotNull null
+                MapSearchResult(
+                    name.ifBlank { "Caméra" },
+                    listOfNotNull(camera.city, camera.source).joinToString(" · ").ifBlank { null },
+                    camera.lat,
+                    camera.lng,
+                ) { viewModel.selectCctvCamera(camera) }
+            }.take(8)
+            (flightMatches + portMatches + shipMatches + satelliteMatches + cctvMatches).take(30)
         }
     }
 
@@ -465,11 +475,11 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
     }
 
     // Chase camera for a tapped flight (MapViewModel.selectFlight/followedFlightKey) — re-runs
-    // every time `flights` ticks (the dead-reckoning loop updates it every second while the
-    // layer is live, see startFlightsAnimation), easing the camera to the aircraft's current
-    // position with the map bearing aligned to its heading, cockpit/chase-view style. Ends when
-    // followedFlightKey goes back to null: the info dialog closing (selectInfo(null)) or the
-    // user manually moving the map (the OnCameraMoveStartedListener below) both clear it.
+    // every time `flights` ticks (the dead-reckoning loop updates it, see startFlightsAnimation),
+    // easing the camera to the aircraft's current position with the map bearing aligned to its
+    // heading, cockpit/chase-view style. Ends when followedFlightKey goes back to null: the info
+    // dialog closing (selectInfo(null)) or the user manually moving the map (the
+    // OnCameraMoveStartedListener below) both clear it.
     LaunchedEffect(maplibreMap, flights, followedFlightKey) {
         val map = maplibreMap ?: return@LaunchedEffect
         val key = followedFlightKey ?: return@LaunchedEffect
@@ -481,6 +491,37 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
             .bearing(marker.flight.heading ?: map.cameraPosition.bearing)
             .build()
         map.easeCamera(CameraUpdateFactory.newCameraPosition(position), FLIGHT_FOLLOW_EASE_MS)
+    }
+
+    // Same idea for a tapped ship (MapViewModel.selectShip/followedShipKey) — re-runs every
+    // maritime tick (startMaritimeAnimation), bearing aligned to its AIS heading when it has one.
+    LaunchedEffect(maplibreMap, maritime, followedShipKey) {
+        val map = maplibreMap ?: return@LaunchedEffect
+        val key = followedShipKey ?: return@LaunchedEffect
+        val ship = maritime.ships.firstOrNull { it.mmsi == key } ?: return@LaunchedEffect
+        val position = CameraPosition.Builder()
+            .target(LatLng(ship.lat, ship.lng))
+            .zoom(SHIP_FOLLOW_ZOOM)
+            .tilt(SHIP_FOLLOW_TILT)
+            .bearing(ship.heading ?: map.cameraPosition.bearing)
+            .build()
+        map.easeCamera(CameraUpdateFactory.newCameraPosition(position), SHIP_FOLLOW_EASE_MS)
+    }
+
+    // Same idea for a tapped satellite (MapViewModel.selectSatellite/followedSatelliteKey) —
+    // re-runs every satellite tick (startSatellitesAnimation, live SGP4 re-propagation). No
+    // heading/bearing tracking (see SATELLITE_FOLLOW_ZOOM's own doc) — just keeps it centered.
+    LaunchedEffect(maplibreMap, satellites, followedSatelliteKey) {
+        val map = maplibreMap ?: return@LaunchedEffect
+        val key = followedSatelliteKey ?: return@LaunchedEffect
+        val sat = satellites.firstOrNull { it.noradId == key } ?: return@LaunchedEffect
+        val position = CameraPosition.Builder()
+            .target(LatLng(sat.lat, sat.lng))
+            .zoom(SATELLITE_FOLLOW_ZOOM)
+            .tilt(0.0)
+            .bearing(map.cameraPosition.bearing)
+            .build()
+        map.easeCamera(CameraUpdateFactory.newCameraPosition(position), SATELLITE_FOLLOW_EASE_MS)
     }
 
     // Eases the camera back to a flat, north-up view once chase mode ends the *programmatic*
@@ -574,7 +615,18 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
             if (handleInfoTap("conflicts-layer", conflictZones) { it.toInfoDialog() }) return@addOnMapClickListener true
             if (handleInfoTap("ports-layer", maritime.ports) { it.toInfoDialog() }) return@addOnMapClickListener true
             if (handleInfoTap("chokepoints-layer", maritime.chokepoints) { it.toInfoDialog() }) return@addOnMapClickListener true
-            if (handleInfoTap("ships-layer", maritime.ships) { it.toInfoDialog() }) return@addOnMapClickListener true
+
+            // Not routed through handleInfoTap, unlike ports/chokepoints on the same layer group:
+            // a ship engages the chase camera (see MapViewModel.selectShip), which needs the
+            // actual Ship object, not just its InfoDialogContent.
+            val shipIdx = map.queryRenderedFeatures(screenPoint, "ships-layer").firstOrNull()
+                ?.getNumberProperty("idx")?.toInt()
+            val tappedShip = shipIdx?.let { maritime.ships.getOrNull(it) }
+            if (tappedShip != null) {
+                viewModel.selectShip(tappedShip)
+                return@addOnMapClickListener true
+            }
+
             if (handleInfoTap("cyber-attacks-layer", cyberAttacks) { it.toInfoDialog() }) return@addOnMapClickListener true
             if (handleInfoTap("traffic-layer", trafficIncidents) { it.toInfoDialog() }) return@addOnMapClickListener true
 
@@ -613,7 +665,7 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
         // not REASON_API_GESTURE, so this doesn't fight itself every tick.
         map.addOnCameraMoveStartedListener { reason ->
             if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) {
-                viewModel.stopFollowingFlight()
+                viewModel.stopFollowing()
             }
         }
     }
@@ -628,12 +680,14 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
         OsintPostDialog(post = post, onDismiss = { viewModel.selectOsintPost(null) })
     }
     selectedInfo?.let { info ->
+        val isFollowable = selectedFlightKey != null || selectedShipKey != null || selectedSatelliteKey != null
+        val isFollowing = followedFlightKey != null || followedShipKey != null || followedSatelliteKey != null
         EntityInfoDialog(
             content = info,
             onDismiss = { viewModel.selectInfo(null) },
-            isFollowing = followedFlightKey != null,
-            onToggleFollow = if (selectedFlightKey != null) {
-                { viewModel.setFollowingFlight(followedFlightKey == null) }
+            isFollowing = isFollowing,
+            onToggleFollow = if (isFollowable) {
+                { viewModel.setFollowing(!isFollowing) }
             } else {
                 null
             },
