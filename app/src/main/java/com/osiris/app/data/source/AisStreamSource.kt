@@ -1,5 +1,6 @@
 package com.osiris.app.data.source
 
+import android.util.Log
 import com.osiris.app.BuildConfig
 import com.osiris.app.data.model.Chokepoint
 import com.osiris.app.data.model.MaritimeResponse
@@ -33,6 +34,11 @@ import kotlin.math.sqrt
  * pollers, not relevant with one device polling itself).
  */
 object AisStreamSource {
+
+    // No visibility at all into this connection previously (every failure/parse error was
+    // swallowed silently) — added while chasing a "no ships ever show up" report that left zero
+    // trace in logcat, so the next repro actually says why.
+    private const val TAG = "AisStreamSource"
 
     private const val WS_URL = "wss://stream.aisstream.io/v0/stream"
     private const val STALE_MS = 10 * 60 * 1000L
@@ -73,34 +79,48 @@ object AisStreamSource {
     @Volatile private var webSocket: WebSocket? = null
     @Volatile private var connecting = false
 
+    @Volatile private var messagesReceived = 0L
+
     fun ensureConnected() {
         if (connecting || webSocket != null) return
         val apiKey = BuildConfig.AIS_API_KEY
-        if (apiKey.isBlank()) return
+        if (apiKey.isBlank()) {
+            Log.w(TAG, "AIS_API_KEY is blank (local.properties not picked up by this build?) — never connecting")
+            return
+        }
         connecting = true
+        Log.d(TAG, "connecting to $WS_URL")
 
         val request = Request.Builder().url(WS_URL).build()
         webSocket = webSocketClient.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(ws: WebSocket, response: Response) {
                 connecting = false
+                Log.d(TAG, "connected (HTTP ${response.code}), sending subscription")
                 ws.send(subscriptionMessage(apiKey))
             }
 
             override fun onMessage(ws: WebSocket, text: String) {
+                messagesReceived++
+                if (messagesReceived <= 3 || messagesReceived % 500 == 0L) {
+                    Log.d(TAG, "message #$messagesReceived (${text.take(200)})")
+                }
                 handleMessage(text)
             }
 
             override fun onClosing(ws: WebSocket, code: Int, reason: String) {
+                Log.d(TAG, "closing: $code $reason")
                 ws.close(1000, null)
             }
 
             override fun onClosed(ws: WebSocket, code: Int, reason: String) {
+                Log.w(TAG, "closed: $code $reason (after $messagesReceived messages) — reconnecting in ${RECONNECT_DELAY_MS}ms")
                 webSocket = null
                 connecting = false
                 scheduleReconnect()
             }
 
             override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
+                Log.e(TAG, "connection failed (HTTP ${response?.code}, after $messagesReceived messages) — reconnecting in ${RECONNECT_DELAY_MS}ms", t)
                 webSocket = null
                 connecting = false
                 scheduleReconnect()
@@ -180,7 +200,9 @@ object AisStreamSource {
     }
 
     private fun handleMessage(text: String) {
-        val parsed = runCatching { json.decodeFromString(AisMessage.serializer(), text) }.getOrNull() ?: return
+        val parsed = runCatching { json.decodeFromString(AisMessage.serializer(), text) }
+            .onFailure { Log.e(TAG, "failed to parse message: ${text.take(300)}", it) }
+            .getOrNull() ?: return
         val mmsi = parsed.MetaData?.MMSI ?: return
 
         val existing = shipsCache.getOrPut(mmsi) { MutableShip(mmsi = mmsi) }
@@ -305,6 +327,7 @@ object AisStreamSource {
             shipsCache.entries.removeAll { now - it.value.timestamp > STALE_MS }
             shipsCache.values.toList()
         }
+        Log.d(TAG, "fetch(): ${ships.size} ships in cache (connected=${webSocket != null}, $messagesReceived messages received total)")
 
         val dynamicPorts = PORTS.map { port ->
             var nearby = 0
