@@ -5,14 +5,16 @@ import com.osiris.app.data.model.Flight
 import com.osiris.app.data.model.FlightMarker
 import com.osiris.app.data.model.FlightRoute
 import com.osiris.app.data.model.toMarkers
-import com.osiris.app.data.remote.NetworkModule
 import com.osiris.app.data.source.AdsbAircraftSource
 import com.osiris.app.data.source.FlightRouteSource
+import com.osiris.app.data.source.FlightTrackingSource
 
 class FlightsRepository {
 
-    suspend fun fetch(baseUrl: String): List<FlightMarker> =
-        NetworkModule.apiFor(baseUrl).flights().toMarkers()
+    /** `baseUrl` is unused — fetched directly from OpenSky/adsb.fi with the embedded
+     * `BuildConfig.OPENSKY_CLIENT_ID/SECRET`, no backend involved (see [FlightTrackingSource]);
+     * kept only so call sites don't need to change. */
+    suspend fun fetch(baseUrl: String): List<FlightMarker> = FlightTrackingSource.fetch().toMarkers()
 
     /** One flight's scheduled origin/destination/ETA/progress, à la FlightRadar24 — see
      * [FlightRoute]. Called directly against adsbdb/hexdb/airplanes.live (see

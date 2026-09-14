@@ -366,8 +366,8 @@ object Airports {
     FlightAirport("UIO", "SEQM", "Mariscal Sucre", "Quito", "EC", -0.1292, -78.3575),
     FlightAirport("GYE", "SEGU", "José Joaquín de Olmedo", "Guayaquil", "EC", -2.1574, -79.8837),    )
 
-    private val BY_ICAO: Map<String, FlightAirport> = ALL.associateBy { it.icao }
-    private val BY_IATA: Map<String, FlightAirport> = ALL.associateBy({ it.iata }, { it }).filterKeys { it.isNotBlank() }
+    private val BY_ICAO: Map<String, FlightAirport> = ALL.mapNotNull { ap -> ap.icao?.let { it to ap } }.toMap()
+    private val BY_IATA: Map<String, FlightAirport> = ALL.mapNotNull { ap -> ap.iata?.takeIf { it.isNotBlank() }?.let { it to ap } }.toMap()
 
     /** Look up by ICAO (4-char) or IATA (3-char) code — used to resolve the origin/destination
      * codes returned by route-lookup sources (see [com.osiris.app.data.source.FlightRouteSource])

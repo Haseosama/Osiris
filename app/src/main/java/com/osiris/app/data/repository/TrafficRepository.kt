@@ -1,9 +1,11 @@
 package com.osiris.app.data.repository
 
 import com.osiris.app.data.model.TrafficIncident
-import com.osiris.app.data.remote.NetworkModule
+import com.osiris.app.data.source.TomTomTrafficSource
 
 class TrafficRepository {
-    suspend fun fetch(baseUrl: String): List<TrafficIncident> =
-        NetworkModule.apiFor(baseUrl).traffic().incidents
+    /** `baseUrl` is unused — fetched directly from TomTom with the embedded
+     * `BuildConfig.TOMTOM_API_KEY`, no backend involved (see [TomTomTrafficSource]); kept only
+     * so call sites don't need to change. */
+    suspend fun fetch(baseUrl: String): List<TrafficIncident> = TomTomTrafficSource.fetch()
 }

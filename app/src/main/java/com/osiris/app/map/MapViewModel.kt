@@ -624,7 +624,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
          * proxied through the self-hosted Osiris instance. */
         val NATIVE_LAYERS = setOf(
             MapLayer.EARTHQUAKES, MapLayer.FIRES, MapLayer.CYBER_ATTACKS, MapLayer.NEWS,
-            MapLayer.WEATHER, MapLayer.CONFLICTS,
+            MapLayer.WEATHER, MapLayer.CONFLICTS, MapLayer.TRAFFIC, MapLayer.MARITIME,
+            MapLayer.FLIGHTS,
         )
     }
 }

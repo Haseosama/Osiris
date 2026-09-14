@@ -37,13 +37,11 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.osiris.app.MainActivity
-import com.osiris.app.data.BackendPreferences
 import com.osiris.app.data.repository.ConflictsRepository
 import com.osiris.app.data.repository.CyberAttacksRepository
 import com.osiris.app.data.repository.EarthquakesRepository
 import com.osiris.app.data.repository.FlightsRepository
 import com.osiris.app.data.repository.TrafficRepository
-import kotlinx.coroutines.flow.first
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
@@ -227,30 +225,22 @@ object WidgetUpdater {
 
 /** The widget's ↻ button — unlike [WidgetUpdater] (fed by the already-running app poll), this
  * does its own one-off fetch straight from the repositories, so it works even with the app
- * process dead. Each call fails independently (`runCatching`) so one dead layer doesn't blank the
- * others. Cyberattaques/Séismes fetch straight from their upstream now (no backend involved) so
- * they still refresh with no backend URL configured; Vols/Conflits/Trafic still need one. */
+ * process dead. Every layer the widget shows now fetches straight from its upstream (no backend
+ * involved at all) — each call still fails independently (`runCatching`) so one dead source
+ * doesn't blank the others. `backendUrl` is no longer read here at all. */
 class RefreshWidgetAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
-        val backendUrl = BackendPreferences(context).backendUrlFlow.first()
-
-        val cyberCount = runCatching { CyberAttacksRepository().fetch(backendUrl).size }.getOrNull()
+        val flightsCount = runCatching { FlightsRepository().fetch("").size }.getOrNull()
+        val cyberCount = runCatching { CyberAttacksRepository().fetch("").size }.getOrNull()
         val earthquakesCount = runCatching {
-            EarthquakesRepository().fetch(backendUrl).count { (it.magnitude ?: 0.0) >= WIDGET_EARTHQUAKE_MIN_MAGNITUDE }
+            EarthquakesRepository().fetch("").count { (it.magnitude ?: 0.0) >= WIDGET_EARTHQUAKE_MIN_MAGNITUDE }
         }.getOrNull()
-
-        var flightsCount: Int? = null
-        var conflictsCount: Int? = null
-        var trafficCount: Int? = null
-        if (backendUrl.isNotBlank()) {
-            flightsCount = runCatching { FlightsRepository().fetch(backendUrl).size }.getOrNull()
-            conflictsCount = runCatching {
-                ConflictsRepository().fetch(backendUrl).count { it.severity in CONFLICT_ALERT_LEVELS }
-            }.getOrNull()
-            trafficCount = runCatching {
-                TrafficRepository().fetch(backendUrl).count { (it.magnitude ?: 0) >= WIDGET_TRAFFIC_MIN_MAGNITUDE }
-            }.getOrNull()
-        }
+        val trafficCount = runCatching {
+            TrafficRepository().fetch("").count { (it.magnitude ?: 0) >= WIDGET_TRAFFIC_MIN_MAGNITUDE }
+        }.getOrNull()
+        val conflictsCount = runCatching {
+            ConflictsRepository().fetch("").count { it.severity in CONFLICT_ALERT_LEVELS }
+        }.getOrNull()
 
         writeWidgetCounts(context, glanceId, flightsCount, cyberCount, conflictsCount, earthquakesCount, trafficCount)
         OsirisWidget().update(context, glanceId)

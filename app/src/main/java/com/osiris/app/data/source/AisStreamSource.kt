@@ -1,0 +1,352 @@
+package com.osiris.app.data.source
+
+import com.osiris.app.BuildConfig
+import com.osiris.app.data.model.Chokepoint
+import com.osiris.app.data.model.MaritimeResponse
+import com.osiris.app.data.model.Port
+import com.osiris.app.data.model.Ship
+import com.osiris.app.data.remote.NetworkModule
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
+import java.util.Collections
+import kotlin.math.cos
+import kotlin.math.sqrt
+
+/**
+ * Live AIS vessel tracking via aisstream.io, connected directly from the phone — mirrors
+ * `osiris-backend/src/app/api/maritime/route.ts`. The backend kept one long-lived WebSocket
+ * open for its whole process lifetime, continuously accumulating ships into an in-memory cache
+ * that every HTTP GET just read a snapshot of; this does the exact same thing, just with the
+ * app itself as the only "client" instead of serving many over HTTP, so there's no need for the
+ * backend's extra response-snapshot cache (that existed purely to survive many concurrent
+ * pollers, not relevant with one device polling itself).
+ */
+object AisStreamSource {
+
+    private const val WS_URL = "wss://stream.aisstream.io/v0/stream"
+    private const val STALE_MS = 10 * 60 * 1000L
+    private const val MAX_SHIPS = 20_000
+    private const val RECONNECT_DELAY_MS = 5_000L
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val json = Json { ignoreUnknownKeys = true }
+
+    private data class MutableShip(
+        val mmsi: Long,
+        var lat: Double? = null,
+        var lng: Double? = null,
+        var speed: Double? = null,
+        var heading: Double? = null,
+        var name: String? = null,
+        var destination: String? = null,
+        var type: String? = null,
+        var timestamp: Long = System.currentTimeMillis(),
+    )
+
+    // LinkedHashMap for insertion order (oldest-first eviction, same as the backend's Map),
+    // synchronized since the WebSocket listener writes from an OkHttp thread while fetch() reads
+    // from a coroutine caller.
+    private val shipsCache = Collections.synchronizedMap(LinkedHashMap<Long, MutableShip>())
+
+    @Volatile private var webSocket: WebSocket? = null
+    @Volatile private var connecting = false
+
+    fun ensureConnected() {
+        if (connecting || webSocket != null) return
+        val apiKey = BuildConfig.AIS_API_KEY
+        if (apiKey.isBlank()) return
+        connecting = true
+
+        val request = Request.Builder().url(WS_URL).build()
+        webSocket = NetworkModule.okHttpClient.newWebSocket(request, object : WebSocketListener() {
+            override fun onOpen(ws: WebSocket, response: Response) {
+                connecting = false
+                ws.send(subscriptionMessage(apiKey))
+            }
+
+            override fun onMessage(ws: WebSocket, text: String) {
+                handleMessage(text)
+            }
+
+            override fun onClosing(ws: WebSocket, code: Int, reason: String) {
+                ws.close(1000, null)
+            }
+
+            override fun onClosed(ws: WebSocket, code: Int, reason: String) {
+                webSocket = null
+                connecting = false
+                scheduleReconnect()
+            }
+
+            override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
+                webSocket = null
+                connecting = false
+                scheduleReconnect()
+            }
+        })
+    }
+
+    private fun scheduleReconnect() {
+        scope.launch {
+            delay(RECONNECT_DELAY_MS)
+            ensureConnected()
+        }
+    }
+
+    private fun subscriptionMessage(apiKey: String): String {
+        // Same target bounding boxes the backend used — high-value SCM chokepoints/hubs, plus a
+        // global fallback aisstream heavily samples on the free tier.
+        val boxes = listOf(
+            listOf(listOf(34.8, 139.5), listOf(35.7, 140.2)), // Tokyo Bay
+            listOf(listOf(25.0, 54.0), listOf(27.5, 57.5)), // Hormuz
+            listOf(listOf(27.0, 32.0), listOf(32.0, 33.5)), // Suez Canal
+            listOf(listOf(12.0, 42.5), listOf(14.0, 44.0)), // Bab el-Mandeb
+            listOf(listOf(8.0, -80.5), listOf(10.0, -79.0)), // Panama Canal
+            listOf(listOf(1.0, 103.0), listOf(3.0, 104.5)), // Malacca / Singapore
+            listOf(listOf(22.0, 118.0), listOf(26.0, 121.0)), // Taiwan Strait
+            listOf(listOf(50.0, 0.0), listOf(53.0, 5.0)), // Rotterdam / English Channel
+            listOf(listOf(33.0, -119.0), listOf(34.5, -117.0)), // US West Coast (LA/LB)
+            listOf(listOf(-90.0, -180.0), listOf(90.0, 180.0)), // Global fallback
+        )
+        val sub = Subscription(apiKey, boxes, listOf("PositionReport", "ShipStaticData"))
+        return json.encodeToString(Subscription.serializer(), sub)
+    }
+
+    @Serializable
+    private data class Subscription(
+        val APIKey: String,
+        val BoundingBoxes: List<List<List<Double>>>,
+        val FilterMessageTypes: List<String>,
+    )
+
+    @Serializable
+    private data class AisMessage(
+        val MessageType: String? = null,
+        val MetaData: AisMetaData? = null,
+        val Message: AisMessageBody? = null,
+    )
+
+    @Serializable private data class AisMetaData(val MMSI: Long? = null, val ShipName: String? = null)
+    @Serializable
+    private data class AisMessageBody(
+        val PositionReport: AisPositionReport? = null,
+        val ShipStaticData: AisShipStaticData? = null,
+    )
+
+    @Serializable
+    private data class AisPositionReport(
+        val Latitude: Double? = null,
+        val Longitude: Double? = null,
+        val Sog: Double? = null,
+        val TrueHeading: Double? = null,
+        val Cog: Double? = null,
+    )
+
+    @Serializable
+    private data class AisShipStaticData(
+        val Name: String? = null,
+        val Destination: String? = null,
+        val Type: Int? = null,
+    )
+
+    private fun osirisShipType(typeCode: Int?): String = when {
+        typeCode == null -> "cargo"
+        typeCode in 80..89 -> "tanker"
+        typeCode in 70..79 -> "cargo"
+        typeCode == 35 -> "military"
+        else -> "cargo"
+    }
+
+    private fun handleMessage(text: String) {
+        val parsed = runCatching { json.decodeFromString(AisMessage.serializer(), text) }.getOrNull() ?: return
+        val mmsi = parsed.MetaData?.MMSI ?: return
+
+        val existing = shipsCache.getOrPut(mmsi) { MutableShip(mmsi = mmsi) }
+        parsed.MetaData.ShipName?.trim()?.takeIf { it.isNotEmpty() }?.let { existing.name = it }
+
+        when (parsed.MessageType) {
+            "PositionReport" -> parsed.Message?.PositionReport?.let { report ->
+                existing.lat = report.Latitude
+                existing.lng = report.Longitude
+                existing.speed = report.Sog
+                existing.heading = report.TrueHeading ?: report.Cog
+                existing.timestamp = System.currentTimeMillis()
+            }
+            "ShipStaticData" -> parsed.Message?.ShipStaticData?.let { data ->
+                data.Name?.trim()?.takeIf { it.isNotEmpty() }?.let { existing.name = it }
+                data.Destination?.trim()?.takeIf { it.isNotEmpty() }?.let { existing.destination = it }
+                existing.type = osirisShipType(data.Type)
+            }
+            else -> {}
+        }
+
+        if (existing.lat == null || existing.lng == null) return
+        synchronized(shipsCache) {
+            if (shipsCache.size > MAX_SHIPS) {
+                val firstKey = shipsCache.keys.firstOrNull()
+                if (firstKey != null) shipsCache.remove(firstKey)
+            }
+        }
+    }
+
+    // ── Static reference data ──────────────────────────────────────────
+
+    private data class PortDef(
+        val name: String, val country: String, val lat: Double, val lng: Double,
+        val type: String, val volume: String, val rank: Int? = null, val fleet: String? = null,
+    )
+
+    private data class ChokepointDef(val name: String, val lat: Double, val lng: Double, val traffic: String, val risk: String)
+
+    private val PORTS = listOf(
+        PortDef("Shanghai", "CN", 31.23, 121.47, "container", "47.3M TEU", rank = 1),
+        PortDef("Singapore", "SG", 1.26, 103.84, "container", "37.2M TEU", rank = 2),
+        PortDef("Ningbo-Zhoushan", "CN", 29.87, 121.55, "container", "33.3M TEU", rank = 3),
+        PortDef("Shenzhen", "CN", 22.54, 114.05, "container", "30.0M TEU", rank = 4),
+        PortDef("Guangzhou", "CN", 23.08, 113.32, "container", "24.2M TEU", rank = 5),
+        PortDef("Busan", "KR", 35.10, 129.04, "container", "22.7M TEU", rank = 6),
+        PortDef("Qingdao", "CN", 36.07, 120.38, "container", "22.0M TEU", rank = 7),
+        PortDef("Rotterdam", "NL", 51.90, 4.50, "container", "14.5M TEU", rank = 8),
+        PortDef("Tokyo", "JP", 35.61, 139.79, "container", "4.5M TEU"),
+        PortDef("Yokohama", "JP", 35.45, 139.66, "container", "2.9M TEU"),
+        PortDef("Kobe", "JP", 34.67, 135.21, "container", "2.8M TEU"),
+        PortDef("Nagoya", "JP", 35.08, 136.87, "container", "2.6M TEU"),
+        PortDef("Osaka", "JP", 34.63, 135.41, "container", "2.1M TEU"),
+        PortDef("Hakata (Fukuoka)", "JP", 33.60, 130.40, "container", "0.9M TEU"),
+        PortDef("Kitakyushu", "JP", 33.91, 130.93, "container", "0.5M TEU"),
+        PortDef("Shimizu", "JP", 35.00, 138.50, "container", "0.5M TEU"),
+        PortDef("Tomakomai", "JP", 42.63, 141.63, "container", "0.4M TEU"),
+        PortDef("Niigata", "JP", 37.95, 139.06, "container", "0.2M TEU"),
+        PortDef("Sendai", "JP", 38.27, 141.02, "container", "0.2M TEU"),
+        PortDef("Mizushima", "JP", 34.50, 133.72, "energy", "Industrial"),
+        PortDef("Yokkaichi", "JP", 34.95, 136.65, "energy", "Industrial"),
+        PortDef("Dubai (Jebel Ali)", "AE", 25.01, 55.06, "container", "14.0M TEU", rank = 9),
+        PortDef("Port Klang", "MY", 2.99, 101.39, "container", "13.2M TEU", rank = 10),
+        PortDef("Antwerp", "BE", 51.30, 4.40, "container", "12.0M TEU", rank = 11),
+        PortDef("Xiamen", "CN", 24.48, 118.09, "container", "11.4M TEU", rank = 12),
+        PortDef("Hamburg", "DE", 53.55, 9.97, "container", "8.7M TEU", rank = 14),
+        PortDef("Los Angeles", "US", 33.74, -118.27, "container", "9.9M TEU", rank = 13),
+        PortDef("Long Beach", "US", 33.75, -118.19, "container", "8.0M TEU", rank = 15),
+        PortDef("Tanjung Pelepas", "MY", 1.36, 103.55, "container", "9.8M TEU", rank = 16),
+        PortDef("Savannah", "US", 32.08, -81.09, "container", "5.6M TEU", rank = 20),
+        PortDef("Felixstowe", "GB", 51.96, 1.35, "container", "3.8M TEU", rank = 25),
+        PortDef("Santos", "BR", -23.95, -46.31, "container", "4.2M TEU", rank = 22),
+        PortDef("Colombo", "LK", 6.94, 79.84, "container", "7.2M TEU", rank = 17),
+        PortDef("Ras Tanura", "SA", 26.64, 50.16, "energy", "6.5M bpd"),
+        PortDef("Fujairah", "AE", 25.14, 56.35, "energy", "3.5M bpd"),
+        PortDef("Novorossiysk", "RU", 44.72, 37.77, "energy", "2.8M bpd"),
+        PortDef("Houston Ship Channel", "US", 29.73, -95.27, "energy", "2.5M bpd"),
+        PortDef("Kharg Island", "IR", 29.24, 50.33, "energy", "2.0M bpd"),
+        PortDef("Primorsk", "RU", 60.35, 28.70, "energy", "1.6M bpd"),
+        PortDef("Norfolk Naval Station", "US", 36.95, -76.33, "naval", "", fleet = "US Atlantic Fleet"),
+        PortDef("San Diego Naval Base", "US", 32.69, -117.15, "naval", "", fleet = "US Pacific Fleet"),
+        PortDef("Pearl Harbor", "US", 21.35, -157.97, "naval", "", fleet = "US Pacific Fleet"),
+        PortDef("Yokosuka", "JP", 35.28, 139.67, "naval", "", fleet = "US 7th Fleet"),
+        PortDef("Severomorsk", "RU", 69.07, 33.42, "naval", "", fleet = "Russian Northern Fleet"),
+        PortDef("Tartus", "SY", 34.89, 35.89, "naval", "", fleet = "Russian Mediterranean"),
+        PortDef("Zhanjiang", "CN", 21.20, 110.39, "naval", "", fleet = "PLA Navy South Sea Fleet"),
+        PortDef("Qingdao Naval", "CN", 36.09, 120.43, "naval", "", fleet = "PLA Navy North Sea Fleet"),
+        PortDef("Portsmouth", "GB", 50.80, -1.11, "naval", "", fleet = "Royal Navy"),
+        PortDef("Toulon", "FR", 43.12, 5.93, "naval", "", fleet = "French Navy Mediterranean"),
+        PortDef("Changi Naval Base", "SG", 1.33, 104.01, "naval", "", fleet = "Republic of Singapore Navy"),
+        PortDef("Visakhapatnam", "IN", 17.69, 83.30, "naval", "", fleet = "Indian Navy Eastern Command"),
+        PortDef("Mumbai Naval", "IN", 18.93, 72.84, "naval", "", fleet = "Indian Navy Western Command"),
+    )
+
+    private val CHOKEPOINTS = listOf(
+        ChokepointDef("Strait of Hormuz", 26.57, 56.25, "21M bpd oil", "HIGH"),
+        ChokepointDef("Strait of Malacca", 2.50, 101.50, "16M bpd oil", "MODERATE"),
+        ChokepointDef("Suez Canal", 30.43, 32.34, "12% world trade", "ELEVATED"),
+        ChokepointDef("Bab el-Mandeb", 12.58, 43.33, "6.2M bpd oil", "CRITICAL"),
+        ChokepointDef("Panama Canal", 9.08, -79.68, "5% world trade", "LOW"),
+        ChokepointDef("Turkish Straits", 41.12, 29.07, "3M bpd oil", "MODERATE"),
+        ChokepointDef("Danish Straits", 55.70, 12.60, "3.2M bpd oil", "LOW"),
+        ChokepointDef("Cape of Good Hope", -34.36, 18.47, "Alt route Suez", "LOW"),
+        ChokepointDef("Taiwan Strait", 24.00, 119.00, "88% large ships", "ELEVATED"),
+        ChokepointDef("Lombok Strait", -8.47, 115.72, "Alt Malacca", "LOW"),
+    )
+
+    private fun distanceKm(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
+        val dx = (lng1 - lng2) * cos((lat1 + lat2) / 2 * Math.PI / 180)
+        val dy = lat1 - lat2
+        return sqrt(dx * dx + dy * dy) * 111.32
+    }
+
+    /** Runs on [Dispatchers.Default] — scanning every port/chokepoint against every cached ship
+     * is up to ~1.4M distance calculations at the 20k-ship cap, fine off the main thread but not
+     * worth risking a jank on it. */
+    suspend fun fetch(): MaritimeResponse = withContext(Dispatchers.Default) {
+        ensureConnected()
+
+        val now = System.currentTimeMillis()
+        val ships = synchronized(shipsCache) {
+            shipsCache.entries.removeAll { now - it.value.timestamp > STALE_MS }
+            shipsCache.values.toList()
+        }
+
+        val dynamicPorts = PORTS.map { port ->
+            var nearby = 0
+            var waiting = 0
+            for (ship in ships) {
+                val lat = ship.lat ?: continue
+                val lng = ship.lng ?: continue
+                if (distanceKm(port.lat, port.lng, lat, lng) < 50) {
+                    nearby++
+                    if ((ship.speed ?: 0.0) < 0.5 && ship.type != "military") waiting++
+                }
+            }
+            val congestionRatio = if (nearby > 0) waiting.toDouble() / nearby else 0.0
+            val (status, dwell) = when {
+                congestionRatio > 0.6 || waiting > 30 -> "SEVERE" to "7+ Days"
+                congestionRatio > 0.4 || waiting > 15 -> "CONGESTED" to "3-5 Days"
+                else -> "NORMAL" to "1-2 Days"
+            }
+            Port(
+                name = port.name, country = port.country, lat = port.lat, lng = port.lng, type = port.type,
+                volume = if (port.volume.isNotEmpty()) "${port.volume} | LIVE: $nearby (WAITING: $waiting)" else null,
+                congestion = status, rank = port.rank, fleet = port.fleet, dwellTime = dwell,
+            )
+        }
+
+        val dynamicChokepoints = CHOKEPOINTS.map { choke ->
+            var nearby = 0
+            for (ship in ships) {
+                val lat = ship.lat ?: continue
+                val lng = ship.lng ?: continue
+                if (distanceKm(choke.lat, choke.lng, lat, lng) < 100) nearby++
+            }
+            val risk = when {
+                nearby > 50 -> "CRITICAL"
+                nearby > 20 && choke.risk != "CRITICAL" -> "HIGH"
+                nearby > 5 && choke.risk == "LOW" -> "ELEVATED"
+                else -> choke.risk
+            }
+            Chokepoint(name = choke.name, lat = choke.lat, lng = choke.lng, traffic = "${choke.traffic} | LIVE SHIPS: $nearby", risk = risk)
+        }
+
+        val shipDtos = ships.mapNotNull { s ->
+            val lat = s.lat ?: return@mapNotNull null
+            val lng = s.lng ?: return@mapNotNull null
+            Ship(id = s.mmsi, mmsi = s.mmsi, lat = lat, lng = lng, speed = s.speed, heading = s.heading, name = s.name, destination = s.destination, type = s.type)
+        }
+
+        return MaritimeResponse(
+            ports = dynamicPorts,
+            chokepoints = dynamicChokepoints,
+            ships = shipDtos,
+            totalPorts = dynamicPorts.size,
+            totalChokepoints = dynamicChokepoints.size,
+            totalShips = shipDtos.size,
+        )
+    }
+}

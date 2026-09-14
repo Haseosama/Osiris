@@ -524,6 +524,17 @@ Au premier lancement, ouvre **Réglages** et renseigne l'URL de ton backend (ex.
       `sanctions.ts` du backend. Dix couches/outils natifs au total maintenant ; il ne reste que
       vols en direct, trafic, maritime, satellites, CCTV, OSINT Telegram, scanner de ports, et
       wallet crypto/pseudo côté RECON derrière le backend
+- [x] **Vers zéro backend, phase 3 (3/4)** — les trois couches à clé les plus simples des
+      quatre prévues : **Trafic routier** (TomTom, identique à la logique déjà en place, clé
+      lue depuis `BuildConfig`), **Maritime** (connexion WebSocket directe à aisstream.io
+      depuis le téléphone via OkHttp — le même principe de cache de navires en mémoire tenu
+      tout le cycle de vie du process que le backend, juste avec l'appli elle-même comme seul
+      "client" au lieu d'en servir plusieurs par HTTP), et **Vols en direct** (OpenSky
+      authentifié quand les clés sont configurées, repli anonyme sinon, secours adsb.fi
+      régional en dernier recours — moteur de classification commercial/privé/jet/militaire
+      porté à l'identique, tables de types et heuristiques comprises). Les clés OpenSky/AIS/
+      TomTom viennent de `local.properties` → `BuildConfig`. Il reste les **Satellites**
+      (CelesTrak + propagation SGP4, nécessite une nouvelle dépendance) pour clore la phase 3
 
 ## Licence
 
