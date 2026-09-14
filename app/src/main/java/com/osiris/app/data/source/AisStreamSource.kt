@@ -340,7 +340,7 @@ object AisStreamSource {
             Ship(id = s.mmsi, mmsi = s.mmsi, lat = lat, lng = lng, speed = s.speed, heading = s.heading, name = s.name, destination = s.destination, type = s.type)
         }
 
-        return MaritimeResponse(
+        MaritimeResponse(
             ports = dynamicPorts,
             chokepoints = dynamicChokepoints,
             ships = shipDtos,
