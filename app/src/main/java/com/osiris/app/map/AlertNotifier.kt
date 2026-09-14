@@ -11,14 +11,16 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.osiris.app.data.model.ConflictZone
 import com.osiris.app.data.model.Earthquake
+import com.osiris.app.recon.WatchlistEntry
 
 private const val CHANNEL_ID = "osiris_alerts"
 
 /**
  * Local notifications for events worth interrupting the user for even while the app isn't in
- * the foreground — a strong earthquake, a conflict zone escalating. [MapViewModel] decides
- * *when* one of those actually happened (never on a session's first poll, since that's just the
- * current state rather than a new event); this only builds and posts the notification.
+ * the foreground — a strong earthquake, a conflict zone escalating, a watched RECON query
+ * changing. [MapViewModel]/[com.osiris.app.recon.WatchlistWorker] each decide *when* one of
+ * those actually happened (never on a first poll/check, since that's just the current state
+ * rather than a new event); this only builds and posts the notification.
  */
 object AlertNotifier {
 
@@ -29,7 +31,7 @@ object AlertNotifier {
             "Alertes OSIRIS",
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
-            description = "Séismes majeurs et escalades de zones de conflit"
+            description = "Séismes majeurs, escalades de zones de conflit, watchlist RECON"
         }
         context.getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
     }
@@ -51,6 +53,19 @@ object AlertNotifier {
             notificationId = zone.id.hashCode(),
             title = "Escalade — ${zone.label}",
             text = "Niveau : ${zone.severity}",
+        )
+    }
+
+    /** A watched RECON query's result changed since its last background check — see
+     * [com.osiris.app.recon.WatchlistWorker]. Generic across all eleven tools (no per-tool
+     * wording): the point is to send the user back into the app to look, not to summarize what
+     * changed in the notification itself. */
+    fun notifyWatchlistChange(context: Context, entry: WatchlistEntry) {
+        notify(
+            context,
+            notificationId = entry.id.hashCode(),
+            title = "Changement détecté",
+            text = "${entry.tool.label} — ${entry.label}",
         )
     }
 

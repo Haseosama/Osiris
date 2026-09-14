@@ -328,3 +328,34 @@ sealed interface ReconResult {
     data class Mac(val data: MacResult) : ReconResult
     data class Raw(val json: String) : ReconResult
 }
+
+private val stableJson = kotlinx.serialization.json.Json { encodeDefaults = true }
+
+/** A canonical string for this result — same input always produces the same output, different
+ * input (almost) always produces a different one. Used by [WatchlistWorker] to detect "did this
+ * change since last time" generically across all eleven typed result shapes plus the untyped
+ * ones, without a per-tool diff written by hand for each. [Raw] is already a plain string, so it
+ * needs no re-encoding — every typed variant round-trips through its own real serializer instead
+ * of e.g. toString(), which isn't guaranteed stable/complete the way generated serialization is. */
+private fun ReconResult.stableSnapshot(): String = when (this) {
+    is ReconResult.Cve -> stableJson.encodeToString(CveResult.serializer(), data)
+    is ReconResult.Dns -> stableJson.encodeToString(DnsResult.serializer(), data)
+    is ReconResult.IpIntel -> stableJson.encodeToString(IpIntelResult.serializer(), data)
+    is ReconResult.Sanctions -> stableJson.encodeToString(SanctionsResult.serializer(), data)
+    is ReconResult.Whois -> stableJson.encodeToString(WhoisResult.serializer(), data)
+    is ReconResult.CryptoWallet -> stableJson.encodeToString(CryptoWalletResult.serializer(), data)
+    is ReconResult.Username -> stableJson.encodeToString(UsernameScanResult.serializer(), data)
+    is ReconResult.Leaks -> stableJson.encodeToString(LeaksResult.serializer(), data)
+    is ReconResult.Github -> stableJson.encodeToString(GithubResult.serializer(), data)
+    is ReconResult.Phone -> stableJson.encodeToString(PhoneResult.serializer(), data)
+    is ReconResult.Mac -> stableJson.encodeToString(MacResult.serializer(), data)
+    is ReconResult.Raw -> json
+}
+
+/** SHA-256 hex digest of [stableSnapshot] — what actually gets stored/compared in
+ * [WatchlistEntry.lastSnapshotHash], so a watchlist entry's persisted state is a short fixed-size
+ * string rather than a full copy of its last result. */
+fun ReconResult.snapshotHash(): String {
+    val bytes = java.security.MessageDigest.getInstance("SHA-256").digest(stableSnapshot().toByteArray(Charsets.UTF_8))
+    return bytes.joinToString("") { "%02x".format(it) }
+}

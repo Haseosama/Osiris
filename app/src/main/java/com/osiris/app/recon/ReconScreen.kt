@@ -2,8 +2,10 @@ package com.osiris.app.recon
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -11,6 +13,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -23,9 +32,14 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -41,6 +55,9 @@ fun ReconScreen(onBack: () -> Unit, viewModel: ReconViewModel = viewModel()) {
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val result by viewModel.result.collectAsStateWithLifecycle()
     val errorText by viewModel.errorText.collectAsStateWithLifecycle()
+    val watchlist by viewModel.watchlist.collectAsStateWithLifecycle()
+    val isCurrentQueryWatched by viewModel.isCurrentQueryWatched.collectAsStateWithLifecycle()
+    var showWatchlist by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -49,6 +66,13 @@ fun ReconScreen(onBack: () -> Unit, viewModel: ReconViewModel = viewModel()) {
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
+                    }
+                },
+                actions = {
+                    BadgedBox(badge = { if (watchlist.isNotEmpty()) Badge { Text(watchlist.size.toString()) } }) {
+                        IconButton(onClick = { showWatchlist = true }) {
+                            Icon(Icons.Filled.Bookmark, contentDescription = "Watchlist")
+                        }
                     }
                 },
             )
@@ -93,8 +117,20 @@ fun ReconScreen(onBack: () -> Unit, viewModel: ReconViewModel = viewModel()) {
                 }
             }
 
-            Button(onClick = viewModel::runQuery, enabled = !isLoading) {
-                Text("Rechercher")
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Button(onClick = viewModel::runQuery, enabled = !isLoading) {
+                    Text("Rechercher")
+                }
+                // Needs a result to hash as the watchlist baseline — see ReconViewModel.toggleWatch.
+                if (result != null) {
+                    IconButton(onClick = viewModel::toggleWatch) {
+                        Icon(
+                            if (isCurrentQueryWatched) Icons.Filled.Star else Icons.Filled.StarBorder,
+                            contentDescription = if (isCurrentQueryWatched) "Retirer de la watchlist" else "Ajouter à la watchlist",
+                            tint = if (isCurrentQueryWatched) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
 
             if (isLoading) {
@@ -116,6 +152,54 @@ fun ReconScreen(onBack: () -> Unit, viewModel: ReconViewModel = viewModel()) {
             }
         }
     }
+
+    if (showWatchlist) {
+        WatchlistDialog(
+            entries = watchlist,
+            onRemove = viewModel::removeFromWatchlist,
+            onDismiss = { showWatchlist = false },
+        )
+    }
+}
+
+/** Lists every saved [WatchlistEntry] with a way to remove it — see [ReconScreen]'s star toggle
+ * for how one gets added. No "edit" here: changing a watched query's target is just removing it
+ * and re-adding the new one from the search screen, not a distinct flow worth its own UI. */
+@Composable
+private fun WatchlistDialog(entries: List<WatchlistEntry>, onRemove: (String) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Watchlist RECON") },
+        text = {
+            if (entries.isEmpty()) {
+                Text("Aucune requête surveillée pour l'instant. Lance une recherche puis appuie sur l'étoile pour la surveiller en arrière-plan.")
+            } else {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState()),
+                ) {
+                    entries.forEach { entry ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column {
+                                Text(entry.tool.label, style = MaterialTheme.typography.labelSmall)
+                                Text(entry.label, style = MaterialTheme.typography.bodyMedium)
+                            }
+                            IconButton(onClick = { onRemove(entry.id) }) {
+                                Icon(Icons.Filled.Delete, contentDescription = "Retirer de la watchlist")
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Fermer") }
+        },
+    )
 }
 
 @Composable

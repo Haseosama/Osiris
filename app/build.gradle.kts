@@ -127,6 +127,10 @@ dependencies {
     // Central rather than needing a JitPack SHA pin.
     implementation("uk.me.g4dpz:predict4java:1.2.2")
 
+    // RECON watchlist — periodic background re-check of saved queries (CVE/WHOIS/fuites/…) so a
+    // change can notify the user without the app being open.
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 

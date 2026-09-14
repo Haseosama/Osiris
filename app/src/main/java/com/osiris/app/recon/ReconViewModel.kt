@@ -4,13 +4,17 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class ReconViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = ReconRepository()
+    private val watchlistPreferences = WatchlistPreferences(application)
 
     private val _selectedTool = MutableStateFlow(ReconTool.DNS)
     val selectedTool: StateFlow<ReconTool> = _selectedTool.asStateFlow()
@@ -29,6 +33,16 @@ class ReconViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _errorText = MutableStateFlow<String?>(null)
     val errorText: StateFlow<String?> = _errorText.asStateFlow()
+
+    val watchlist: StateFlow<List<WatchlistEntry>> =
+        watchlistPreferences.entriesFlow.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Whether the *current* tool/input/secondary combo is already on the watchlist — drives the
+     * star toggle's on/off state. Compares by [WatchlistEntry.idFor] rather than object identity
+     * so it stays correct across recompositions. */
+    val isCurrentQueryWatched: StateFlow<Boolean> = combine(watchlist, selectedTool, inputValue, secondaryValue) { entries, tool, value, secondary ->
+        entries.any { it.id == WatchlistEntry.idFor(tool, value, secondary.ifBlank { null }) }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     fun selectTool(tool: ReconTool) {
         _selectedTool.value = tool
@@ -62,5 +76,37 @@ class ReconViewModel(application: Application) : AndroidViewModel(application) {
                 .onFailure { _errorText.value = it.message ?: "Erreur réseau" }
             _isLoading.value = false
         }
+    }
+
+    /** Adds/removes the current query from the watchlist — only meaningful once a result has
+     * come back at least once (nothing to establish a baseline hash from otherwise), same
+     * tool/input/secondary the "Rechercher" button above just ran. */
+    fun toggleWatch() {
+        val tool = _selectedTool.value
+        val value = _inputValue.value
+        val secondary = _secondaryValue.value.ifBlank { null }
+        val id = WatchlistEntry.idFor(tool, value, secondary)
+        viewModelScope.launch {
+            if (isCurrentQueryWatched.value) {
+                watchlistPreferences.remove(id)
+            } else {
+                val result = _result.value ?: return@launch
+                watchlistPreferences.add(
+                    WatchlistEntry(
+                        id = id,
+                        tool = tool,
+                        value = value,
+                        secondaryValue = secondary,
+                        label = value.ifBlank { tool.label },
+                        lastSnapshotHash = result.snapshotHash(),
+                        lastCheckedMs = System.currentTimeMillis(),
+                    )
+                )
+            }
+        }
+    }
+
+    fun removeFromWatchlist(id: String) {
+        viewModelScope.launch { watchlistPreferences.remove(id) }
     }
 }
