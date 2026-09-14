@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.osiris.app.data.LayerCache
+import com.osiris.app.data.LayerTogglePreferences
 import com.osiris.app.data.PollIntervalPreferences
 import com.osiris.app.data.SatelliteCategoryPreferences
 import com.osiris.app.data.model.AircraftDetail
@@ -53,6 +54,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val layerCache = LayerCache(application)
     private val pollIntervalPreferences = PollIntervalPreferences(application)
     private val satelliteCategoryPreferences = SatelliteCategoryPreferences(application)
+    private val layerTogglePreferences = LayerTogglePreferences(application)
 
     private val flightsRepo = FlightsRepository()
     private val earthquakesRepo = EarthquakesRepository()
@@ -330,6 +332,10 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             // Loaded before anything else touches satellites, so the very first poll/cache read
             // already filters correctly instead of briefly showing everything.
             _disabledSatelliteCategories.value = satelliteCategoryPreferences.disabledCategoriesFlow.first()
+            // Loaded before the polling loop below reads it, so a layer the user turned on/off
+            // last session starts in the right state instead of always resetting to
+            // MapLayer.defaultEnabled.
+            _layerToggles.value = layerTogglePreferences.load()
             loadCachedData()
             _layerToggles.value.forEach { (layer, enabled) ->
                 if (enabled) {
@@ -377,6 +383,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleLayer(layer: MapLayer) {
         val nowEnabled = !(_layerToggles.value[layer] ?: false)
         _layerToggles.update { it + (layer to nowEnabled) }
+        viewModelScope.launch { layerTogglePreferences.save(_layerToggles.value) }
         if (nowEnabled) {
             startPolling(layer)
             when (layer) {

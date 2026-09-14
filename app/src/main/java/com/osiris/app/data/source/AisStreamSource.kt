@@ -100,20 +100,15 @@ object AisStreamSource {
                 Log.d(TAG, "connected (HTTP ${response.code}), sending subscription (${sub.length} chars, enqueued=$sent): $sub")
             }
 
-            override fun onMessage(ws: WebSocket, text: String) {
-                messagesReceived++
-                if (messagesReceived <= 3 || messagesReceived % 500 == 0L) {
-                    Log.d(TAG, "message #$messagesReceived (${text.take(300)})")
-                }
-                handleMessage(text)
-            }
+            override fun onMessage(ws: WebSocket, text: String) = onPayload(text)
 
-            override fun onMessage(ws: WebSocket, bytes: okio.ByteString) {
-                // Shouldn't happen (aisstream.io sends text frames) — logged in case a binary
-                // frame is arriving instead and silently being dropped by the default no-op
-                // WebSocketListener.onMessage(ByteString) implementation.
-                Log.w(TAG, "unexpected binary message: ${bytes.size} bytes")
-            }
+            // aisstream.io sends every stream message as a BINARY frame, not text — confirmed by
+            // direct testing: this was the actual bug behind "no ships ever show up". OkHttp only
+            // ever called onMessage(String) here before, which this server-side choice never
+            // triggers, so every real message was silently dropped by the (until now unoverridden)
+            // no-op default WebSocketListener.onMessage(ByteString) — the connection looked
+            // healthy (HTTP 101, subscription sent) but nothing ever reached handleMessage().
+            override fun onMessage(ws: WebSocket, bytes: okio.ByteString) = onPayload(bytes.utf8())
 
             override fun onClosing(ws: WebSocket, code: Int, reason: String) {
                 Log.d(TAG, "closing: $code $reason")
@@ -134,6 +129,14 @@ object AisStreamSource {
                 scheduleReconnect()
             }
         })
+    }
+
+    private fun onPayload(text: String) {
+        messagesReceived++
+        if (messagesReceived <= 3 || messagesReceived % 500 == 0L) {
+            Log.d(TAG, "message #$messagesReceived (${text.take(300)})")
+        }
+        handleMessage(text)
     }
 
     private fun scheduleReconnect() {
