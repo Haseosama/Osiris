@@ -224,7 +224,13 @@ object AisStreamSource {
                 existing.lat = report.Latitude
                 existing.lng = report.Longitude
                 existing.speed = report.Sog
-                existing.heading = report.TrueHeading ?: report.Cog
+                // Per ITU-R M.1371, 511 is TrueHeading's own "not available" sentinel (most small
+                // craft have no gyrocompass and never report a real one) and 360 is Cog's — a
+                // non-null field doesn't mean a valid bearing. Falling through to a genuinely
+                // usable value keeps DeadReckoning.project() from sailing a real, moving ship off
+                // in whatever direction 511°/360° happens to reduce to mod 360.
+                existing.heading = report.TrueHeading?.takeIf { it in 0.0..359.0 }
+                    ?: report.Cog?.takeIf { it in 0.0..359.9 }
                 existing.timestamp = System.currentTimeMillis()
             }
             "ShipStaticData" -> parsed.Message?.ShipStaticData?.let { data ->
