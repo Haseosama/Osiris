@@ -3,7 +3,6 @@ package com.osiris.app.map
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.osiris.app.data.BackendPreferences
 import com.osiris.app.data.LayerCache
 import com.osiris.app.data.PollIntervalPreferences
 import com.osiris.app.data.SatelliteCategoryPreferences
@@ -42,19 +41,15 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class MapViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val backendPreferences = BackendPreferences(application)
     private val layerCache = LayerCache(application)
     private val pollIntervalPreferences = PollIntervalPreferences(application)
     private val satelliteCategoryPreferences = SatelliteCategoryPreferences(application)
@@ -72,9 +67,6 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val osintRepo = OsintRepository()
     private val trafficRepo = TrafficRepository()
 
-    val backendUrl: StateFlow<String> = backendPreferences.backendUrlFlow
-        .stateIn(viewModelScope, SharingStarted.Eagerly, "")
-
     private val _layerToggles = MutableStateFlow(
         MapLayer.entries.associateWith { it.defaultEnabled }
     )
@@ -82,17 +74,6 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _layerErrors = MutableStateFlow<Map<MapLayer, String?>>(emptyMap())
     val layerErrors: StateFlow<Map<MapLayer, String?>> = _layerErrors.asStateFlow()
-
-    /** True once every currently-enabled layer has failed at least once against a configured
-     * backend — distinct from "no backend configured", which already has its own banner. */
-    val backendUnreachable: StateFlow<Boolean> = combine(backendUrl, layerToggles, layerErrors) { url, toggles, errors ->
-        if (url.isBlank()) {
-            false
-        } else {
-            val enabledLayers = toggles.filterValues { it }.keys
-            enabledLayers.isNotEmpty() && enabledLayers.all { errors[it] != null }
-        }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     val flights = MutableStateFlow<List<FlightMarker>>(emptyList())
     val earthquakes = MutableStateFlow<List<Earthquake>>(emptyList())
@@ -550,14 +531,9 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         pollingJobs[layer]?.cancel()
         pollingJobs[layer] = viewModelScope.launch {
             while (isActive) {
-                val baseUrl = backendUrl.value
-                if (baseUrl.isBlank() && layer !in NATIVE_LAYERS) {
-                    setError(layer, "Configure l'URL du backend dans Réglages")
-                } else {
-                    runCatching { fetch(layer, baseUrl) }
-                        .onSuccess { setError(layer, null) }
-                        .onFailure { setError(layer, it.message ?: "Erreur réseau") }
-                }
+                runCatching { fetch(layer, "") }
+                    .onSuccess { setError(layer, null) }
+                    .onFailure { setError(layer, it.message ?: "Erreur réseau") }
                 // Read fresh every loop rather than once, so a cadence changed in Réglages takes
                 // effect on the next tick instead of requiring the layer to be toggled off/on.
                 delay(pollIntervalPreferences.intervalFlow(layer).first())
@@ -669,18 +645,6 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         val CONFLICT_ALERT_LEVELS = setOf("high", "war")
         const val REPLAY_BUFFER_CAPACITY = 40
         const val REPLAY_RECORD_INTERVAL_MS = 30_000L
-
-        /** Layers ported off the backend (see the "no backend" migration plan, Phases 1-2) —
-         * these poll fine with no backend URL configured at all, unlike everything still
-         * proxied through the self-hosted Osiris instance. */
-        val NATIVE_LAYERS = setOf(
-            MapLayer.EARTHQUAKES, MapLayer.FIRES, MapLayer.CYBER_ATTACKS, MapLayer.NEWS,
-            MapLayer.WEATHER, MapLayer.CONFLICTS, MapLayer.TRAFFIC, MapLayer.MARITIME,
-            MapLayer.FLIGHTS, MapLayer.SATELLITES, MapLayer.OSINT,
-            // CCTV is only partially native (see CctvRepository) — still listed here so the map
-            // shows that real subset instead of nothing when no backend is configured at all.
-            MapLayer.CCTV,
-        )
     }
 }
 

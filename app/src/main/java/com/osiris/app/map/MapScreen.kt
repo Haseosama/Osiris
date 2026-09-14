@@ -150,8 +150,6 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    val backendUrl by viewModel.backendUrl.collectAsStateWithLifecycle()
-    val backendUnreachable by viewModel.backendUnreachable.collectAsStateWithLifecycle()
     val layerToggles by viewModel.layerToggles.collectAsStateWithLifecycle()
     val layerErrors by viewModel.layerErrors.collectAsStateWithLifecycle()
     val flights by viewModel.flights.collectAsStateWithLifecycle()
@@ -622,7 +620,7 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
         NewsPlayerDialog(feed = feed, onDismiss = { viewModel.selectNewsFeed(null) })
     }
     selectedCctvCamera?.let { camera ->
-        CctvViewerDialog(camera = camera, backendUrl = backendUrl, onDismiss = { viewModel.selectCctvCamera(null) })
+        CctvViewerDialog(camera = camera, backendUrl = "", onDismiss = { viewModel.selectCctvCamera(null) })
     }
     selectedOsintPost?.let { post ->
         OsintPostDialog(post = post, onDismiss = { viewModel.selectOsintPost(null) })
@@ -766,36 +764,6 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
                             )
                         }
                     }
-                }
-            }
-
-            if (backendUrl.isBlank()) {
-                Surface(
-                    onClick = onOpenSettings,
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
-                    shape = MaterialTheme.shapes.small,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
-                ) {
-                    Text(
-                        "Configure le backend dans Réglages →",
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            } else if (backendUnreachable) {
-                Surface(
-                    onClick = onOpenSettings,
-                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.9f),
-                    shape = MaterialTheme.shapes.small,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
-                ) {
-                    Text(
-                        "Backend injoignable — vérifie qu'il est démarré et l'URL dans Réglages →",
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                    )
                 }
             }
 

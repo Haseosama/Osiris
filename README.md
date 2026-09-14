@@ -3,67 +3,38 @@
 Client Android natif (Kotlin/Jetpack Compose, **zéro WebView**) pour
 [Osiris](https://github.com/simplifaisoul/osiris), le dashboard OSINT open source (vols,
 séismes, incendies, CCTV, actu 24/7, météo sévère, espace, cyber, zones de conflit, crypto/OFAC,
-Telegram OSINT, toolkit RECON...).
+Telegram OSINT, toolkit RECON...). **100% autonome — aucun backend à héberger.**
 
 ## Architecture
 
 Osiris (le dépôt web) est une appli Next.js dont ~40 routes `/api/*` agrègent en temps réel des
 dizaines de sources externes (OpenSky, USGS, NASA FIRMS, TfL/WSDOT/Caltrans, GDELT, OpenSanctions,
-NVD...). Plutôt que de dupliquer toute cette logique serveur en Kotlin, cette appli **réécrit
-entièrement le client** en natif et consomme l'API JSON déjà existante d'une instance Osiris que
-tu auto-héberges.
+NVD...). Cette appli a commencé comme un client de ce backend auto-hébergé, puis a migré couche
+par couche vers un appel direct à chaque source amont depuis le téléphone (voir le journal de
+migration dans la Roadmap ci-dessous, phases "Vers zéro backend") — la migration est aujourd'hui
+terminée : plus aucune couche ni outil RECON n'a besoin d'un serveur intermédiaire.
 
 ```
-Appli Android (Kotlin/Compose, MapLibre Native)  →  ton backend Osiris auto-hébergé (Docker)
+Appli Android (Kotlin/Compose, MapLibre Native)  →  les sources amont, directement
 ```
 
 ### Pile technique
 
 - Kotlin + Jetpack Compose + Material3
 - **MapLibre Native Android SDK** — rendu carte vectoriel GPU, équivalent natif de MapLibre GL JS
-- Retrofit + OkHttp + kotlinx.serialization pour l'API REST
-- Coroutines/Flow pour le polling par couche (une couche n'interroge le backend que si elle est
-  activée, à la manière du `layerFetchedRef` du frontend web)
-- DataStore Preferences pour l'URL du backend
+- OkHttp + kotlinx.serialization pour les appels directs à chaque source amont
+- Coroutines/Flow pour le polling par couche (une couche n'interroge sa source que si elle est
+  activée)
 
-## 1. Héberger le backend Osiris
+## Ouvrir ce projet
 
-Cette appli ne fonctionne qu'avec une instance Osiris joignable depuis ton téléphone. Deux
-façons de la lancer :
+`File > Open` dans Android Studio, sélectionne ce dossier, laisse Gradle synchroniser, lance
+sur un appareil/émulateur — aucune configuration réseau préalable n'est nécessaire.
 
-**Node.js direct** (le plus simple pour tester en local) :
-
-```bash
-git clone https://github.com/simplifaisoul/osiris.git
-cd osiris
-npm install
-npm run dev
-```
-
-Ouvre [http://localhost:3000](http://localhost:3000) sur ton PC pour vérifier que ça tourne.
-Fonctionne sans aucune clé API — toutes les couches keyless marchent tout de suite, seul le
-scanner RECON répond 503 tant que `SCANNER_URL`/`SCANNER_KEY` ne sont pas renseignés dans un
-`.env` (`cp .env.example .env`).
-
-**Docker** (isolation, redémarre en arrière-plan) :
-
-```bash
-cp .env.example .env
-docker compose up -d
-```
-
-Voir [DOCKER.md](https://github.com/simplifaisoul/osiris/blob/master/DOCKER.md) du dépôt Osiris
-pour l'auto-hébergement complet (CasaOS, clés API optionnelles FIRMS/OpenSky/N2YO, scanner RECON).
-
-Dans les deux cas, ton téléphone doit joindre l'IP locale de ton PC (même Wi-Fi), pas
-`localhost` — vois l'étape 2.
-
-## 2. Ouvrir ce projet
-
-`File > Open` dans Android Studio, sélectionne ce dossier, laisse Gradle synchroniser.
-
-Au premier lancement, ouvre **Réglages** et renseigne l'URL de ton backend (ex.
-`http://192.168.1.10:3000`), puis « Tester la connexion ».
+Les trois seules couches à clé (OpenSky, AIS, TomTom) lisent leurs identifiants depuis
+`local.properties` (gitignored, jamais commité) via `BuildConfig` — voir `app/build.gradle.kts`.
+Absents, ces champs de `BuildConfig` sortent en chaîne vide et ces couches-là restent inactives ;
+tout le reste (vols en repli anonyme/adsb.fi, cartes, RECON, CCTV...) fonctionne sans aucune clé.
 
 ## Roadmap
 
@@ -677,6 +648,24 @@ Au premier lancement, ouvre **Réglages** et renseigne l'URL de ton backend (ex.
       web IPCamLive utilisé comme URL à la fois d'image et de flux, ne se charge comme aucun
       des deux) restent sans rien à porter — c'est un choix du backend, pas un oubli. Chaque
       région que sert `route.ts` a maintenant un équivalent natif
+- [x] **Vers zéro backend, phase 5.8 — Espace (dernière route backend)** — `/api/space-weather`
+      était le tout dernier appel qui passait encore par le backend auto-hébergé : trois appels
+      NOAA SWPC en parallèle (indice Kp, alertes, éruptions solaires), calcul du niveau de
+      tempête géomagnétique, aucune clé. Portée à l'identique dans `SpaceWeatherSource` —
+      `ReconRepository` n'a plus aucune branche de secours vers le backend, `query()` perd son
+      paramètre `baseUrl`
+- [x] **Phase 6 — nettoyage Réglages > Backend** — plus aucune couche ni outil RECON n'ayant
+      besoin d'un backend, l'écran Réglages perd sa section « Backend Osiris » (URL, test de
+      connexion) et ne garde que la cadence de polling par couche ; `BackendPreferences` est
+      supprimée. `MapViewModel`/`ReconViewModel` perdent leurs bannières « configure le
+      backend »/« backend injoignable » et leur logique de dégradation associée — `NATIVE_LAYERS`
+      et `NATIVE_TOOLS`, devenus triviaux (tout y était déjà), disparaissent avec elles.
+      `CctvRepository` perd sa fusion avec le backend (devenue du code mort, plus personne ne
+      peut jamais configurer d'URL) et délègue directement à `NativeCctvSource`. Les paramètres
+      `baseUrl`/`backendUrl` restent en place, ignorés, sur les repositories de couches déjà
+      migrées phase par phase (Retrofit/`OsirisApi` aussi) plutôt que retouchés un par un — sans
+      risque puisqu'ils ne font plus rien, et cohérent avec le choix fait à chaque phase
+      précédente de garder ces signatures inchangées pour ne pas casser les points d'appel
 
 ## Licence
 

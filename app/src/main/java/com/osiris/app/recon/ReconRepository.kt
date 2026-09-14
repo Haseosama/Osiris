@@ -1,6 +1,5 @@
 package com.osiris.app.recon
 
-import com.osiris.app.data.remote.NetworkModule
 import com.osiris.app.recon.source.CveSource
 import com.osiris.app.recon.source.DnsSource
 import com.osiris.app.recon.source.GithubSource
@@ -10,36 +9,18 @@ import com.osiris.app.recon.source.MacSource
 import com.osiris.app.recon.source.NetworkScannerSource
 import com.osiris.app.recon.source.PhoneSource
 import com.osiris.app.recon.source.SanctionsSource
+import com.osiris.app.recon.source.SpaceWeatherSource
 import com.osiris.app.recon.source.SslCertsSource
 import com.osiris.app.recon.source.UsernameSherlockSource
 import com.osiris.app.recon.source.WalletIntelSource
 import com.osiris.app.recon.source.WhoisSource
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import java.net.URLEncoder
 
+/** Every RECON tool hits its upstream source directly from the phone — see the "no backend"
+ * migration plan. [ReconTool.SPACE_WEATHER] ([SpaceWeatherSource]) was the last one still
+ * proxied through the self-hosted Osiris backend. */
 class ReconRepository {
 
-    companion object {
-        /** Tools that hit their upstream directly and need no backend at all — see [query].
-         * [ReconViewModel] uses this to skip the "configure the backend" gate for these. */
-        val NATIVE_TOOLS: Set<ReconTool> = setOf(
-            ReconTool.DNS, ReconTool.SSL_CERTS, ReconTool.CVE, ReconTool.LEAKS,
-            ReconTool.GITHUB, ReconTool.MAC, ReconTool.PHONE,
-            ReconTool.WHOIS, ReconTool.IP_INTEL, ReconTool.SANCTIONS,
-            ReconTool.CRYPTO_WALLET, ReconTool.USERNAME, ReconTool.PORT_SCAN,
-        )
-    }
-
-    private val prettyJson = Json {
-        prettyPrint = true
-        ignoreUnknownKeys = true
-    }
-
-    /** Every tool but [ReconTool.SPACE_WEATHER] now hits its upstream source directly from the
-     * phone (see the "no backend" migration plan) — `baseUrl` only matters for that one
-     * remaining tool, still proxied through the self-hosted Osiris backend. */
-    suspend fun query(baseUrl: String, tool: ReconTool, value: String, secondaryValue: String?): Result<ReconResult> =
+    suspend fun query(tool: ReconTool, value: String, secondaryValue: String?): Result<ReconResult> =
         runCatching {
             when (tool) {
                 ReconTool.DNS -> ReconResult.Dns(DnsSource.lookup(value))
@@ -55,36 +36,7 @@ class ReconRepository {
                 ReconTool.CRYPTO_WALLET -> ReconResult.CryptoWallet(WalletIntelSource.lookup(value, chainOverride = null))
                 ReconTool.USERNAME -> ReconResult.Username(UsernameSherlockSource.lookup(value))
                 ReconTool.PORT_SCAN -> ReconResult.Raw(NetworkScannerSource.scan(value, secondaryValue ?: "quick"))
-                else -> {
-                    val url = buildUrl(tool, value, secondaryValue)
-                    val response = NetworkModule.apiFor(baseUrl).raw(url)
-                    val body = response.body()?.string().orEmpty()
-                    if (body.isBlank()) {
-                        error("HTTP ${response.code()}")
-                    }
-                    ReconResult.Raw(prettyPrint(body))
-                }
+                ReconTool.SPACE_WEATHER -> ReconResult.Raw(SpaceWeatherSource.fetch())
             }
         }
-
-    private fun buildUrl(tool: ReconTool, value: String, secondaryValue: String?): String = buildString {
-        append(tool.path)
-        if (tool.paramName.isNotEmpty()) {
-            append('?')
-            append(tool.paramName)
-            append('=')
-            append(URLEncoder.encode(value, "UTF-8"))
-            tool.secondaryParam?.let { secondary ->
-                append('&')
-                append(secondary.name)
-                append('=')
-                append(URLEncoder.encode(secondaryValue ?: secondary.default, "UTF-8"))
-            }
-        }
-    }
-
-    private fun prettyPrint(raw: String): String = runCatching {
-        val element = prettyJson.parseToJsonElement(raw)
-        prettyJson.encodeToString(JsonElement.serializer(), element)
-    }.getOrDefault(raw)
 }

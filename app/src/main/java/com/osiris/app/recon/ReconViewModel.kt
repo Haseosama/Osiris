@@ -3,21 +3,14 @@ package com.osiris.app.recon
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.osiris.app.data.BackendPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class ReconViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val backendPreferences = BackendPreferences(application)
     private val repository = ReconRepository()
-
-    val backendUrl: StateFlow<String> = backendPreferences.backendUrlFlow
-        .stateIn(viewModelScope, SharingStarted.Eagerly, "")
 
     private val _selectedTool = MutableStateFlow(ReconTool.DNS)
     val selectedTool: StateFlow<ReconTool> = _selectedTool.asStateFlow()
@@ -55,11 +48,6 @@ class ReconViewModel(application: Application) : AndroidViewModel(application) {
 
     fun runQuery() {
         val tool = _selectedTool.value
-        val baseUrl = backendUrl.value
-        if (baseUrl.isBlank() && tool !in ReconRepository.NATIVE_TOOLS) {
-            _errorText.value = "Configure l'URL du backend dans Réglages"
-            return
-        }
         if (tool.paramName.isNotEmpty() && _inputValue.value.isBlank()) {
             _errorText.value = "Renseigne une valeur à rechercher"
             return
@@ -69,7 +57,7 @@ class ReconViewModel(application: Application) : AndroidViewModel(application) {
             _isLoading.value = true
             _errorText.value = null
             _result.value = null
-            repository.query(baseUrl, tool, _inputValue.value, _secondaryValue.value.ifBlank { null })
+            repository.query(tool, _inputValue.value, _secondaryValue.value.ifBlank { null })
                 .onSuccess { _result.value = it }
                 .onFailure { _errorText.value = it.message ?: "Erreur réseau" }
             _isLoading.value = false
