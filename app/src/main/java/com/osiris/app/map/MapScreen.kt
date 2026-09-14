@@ -431,19 +431,24 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
     // layersController (not just maplibreMap) since a style switch replaces the whole Style
     // object and wipes the component's layers with it, so it needs reactivating against the
     // new one each time — same reason layersController itself is rebuilt on every style change.
+    // Wrapped in runCatching: an uncaught exception here (a flaky location engine, a permission
+    // race) would otherwise propagate out of this LaunchedEffect and take the whole composition
+    // down with it — every other layer (flights included) stops repainting, not just this one.
     LaunchedEffect(maplibreMap, layersController, hasLocationPermission) {
         val map = maplibreMap ?: return@LaunchedEffect
         val style = map.style ?: return@LaunchedEffect
         if (!hasLocationPermission) return@LaunchedEffect
-        val locationComponent = map.locationComponent
-        locationComponent.activateLocationComponent(
-            LocationComponentActivationOptions.builder(context, style).build()
-        )
-        locationComponent.isLocationComponentEnabled = true
-        // NONE: the dot never drives the camera itself, only the MyLocation button does — two
-        // independent behaviours would otherwise fight over what "recentering" means.
-        locationComponent.cameraMode = CameraMode.NONE
-        locationComponent.renderMode = RenderMode.COMPASS
+        runCatching {
+            val locationComponent = map.locationComponent
+            locationComponent.activateLocationComponent(
+                LocationComponentActivationOptions.builder(context, style).build()
+            )
+            locationComponent.isLocationComponentEnabled = true
+            // NONE: the dot never drives the camera itself, only the MyLocation button does —
+            // two independent behaviours would otherwise fight over what "recentering" means.
+            locationComponent.cameraMode = CameraMode.NONE
+            locationComponent.renderMode = RenderMode.COMPASS
+        }
     }
 
     LaunchedEffect(layersController, flights) { layersController?.setFlights(flights) }
