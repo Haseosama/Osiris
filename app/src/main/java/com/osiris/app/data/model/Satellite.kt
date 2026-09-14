@@ -23,3 +23,12 @@ data class Satellite(
     val category: String? = null, // comms | navigation | earth_obs | military | science | other
     val noradId: String? = null,
 )
+
+/** Mirrors the JSON returned by GET /api/satellites/orbit?id=&t= — fetched on demand for one
+ * satellite when tapped, not bundled into the main list (the backend's own comment: "several
+ * megabytes for ~19,000 satellites, and an operator looks at one orbit at a time"). Only the
+ * orbital period is used for now; the `segments` track points aren't parsed. */
+@Serializable
+data class SatelliteOrbit(
+    val periodMinutes: Double? = null,
+)

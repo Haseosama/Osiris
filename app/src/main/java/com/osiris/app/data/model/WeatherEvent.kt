@@ -22,4 +22,5 @@ data class WeatherEvent(
     val lng: Double,
     val date: String? = null,
     val expires: String? = null,
+    val source: String? = null,
 )

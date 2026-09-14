@@ -11,6 +11,7 @@ import com.osiris.app.data.model.LiveNewsFeed
 import com.osiris.app.data.model.MaritimeResponse
 import com.osiris.app.data.model.OsintPost
 import com.osiris.app.data.model.Satellite
+import com.osiris.app.data.model.TrafficIncident
 import com.osiris.app.data.model.WeatherEvent
 import com.osiris.app.map.MapLayer
 import kotlinx.coroutines.Dispatchers
@@ -65,6 +66,9 @@ class LayerCache(context: Context) {
 
     suspend fun saveOsint(data: List<OsintPost>) = save(MapLayer.OSINT, data)
     suspend fun loadOsint(): List<OsintPost>? = load(MapLayer.OSINT)
+
+    suspend fun saveTraffic(data: List<TrafficIncident>) = save(MapLayer.TRAFFIC, data)
+    suspend fun loadTraffic(): List<TrafficIncident>? = load(MapLayer.TRAFFIC)
 
     // runCatching wraps the serializer<T>() resolution too (not just the file I/O): a model
     // class missing @Serializable throws there, before withContext's lambda is even entered,

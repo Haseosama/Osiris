@@ -12,6 +12,7 @@ import com.osiris.app.data.model.LiveNewsFeed
 import com.osiris.app.data.model.MaritimeResponse
 import com.osiris.app.data.model.OsintPost
 import com.osiris.app.data.model.Satellite
+import com.osiris.app.data.model.TrafficIncident
 import com.osiris.app.data.model.WeatherEvent
 import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.CircleLayer
@@ -28,33 +29,38 @@ import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 
-private val FLIGHT_COMMERCIAL = "#00E5FF".toColorInt()
-private val FLIGHT_PRIVATE = "#FFD54A".toColorInt()
-private val FLIGHT_JET = "#E040FB".toColorInt()
-private val FLIGHT_MILITARY = "#4CD97B".toColorInt()
+private val FLIGHT_COMMERCIAL = EntityColors.FLIGHT_COMMERCIAL.toColorInt()
+private val FLIGHT_PRIVATE = EntityColors.FLIGHT_PRIVATE.toColorInt()
+private val FLIGHT_JET = EntityColors.FLIGHT_JET.toColorInt()
+private val FLIGHT_MILITARY = EntityColors.FLIGHT_MILITARY.toColorInt()
 
-private val SEVERITY_LOW = "#4CD97B".toColorInt()
-private val SEVERITY_MEDIUM = "#FFB020".toColorInt()
-private val SEVERITY_HIGH = "#FF5252".toColorInt()
-private val SEVERITY_WAR = "#B00020".toColorInt()
+private val SEVERITY_LOW = EntityColors.SEVERITY_LOW.toColorInt()
+private val SEVERITY_MEDIUM = EntityColors.SEVERITY_MEDIUM.toColorInt()
+private val SEVERITY_HIGH = EntityColors.SEVERITY_HIGH.toColorInt()
+private val SEVERITY_WAR = EntityColors.SEVERITY_WAR.toColorInt()
 
-private val FIRE_COLOR = "#FF7A1A".toColorInt()
+private val FIRE_COLOR = EntityColors.FIRE.toColorInt()
 
-private val PORT_CONTAINER = "#00E5FF".toColorInt()
-private val PORT_ENERGY = "#FFB020".toColorInt()
-private val PORT_NAVAL = "#FF5252".toColorInt()
-private val SHIP_COLOR = "#8AE6C8".toColorInt()
+private val PORT_CONTAINER = EntityColors.PORT_CONTAINER.toColorInt()
+private val PORT_ENERGY = EntityColors.PORT_ENERGY.toColorInt()
+private val PORT_NAVAL = EntityColors.PORT_NAVAL.toColorInt()
+private val SHIP_COLOR = EntityColors.SHIP.toColorInt()
 
-private val SAT_COMMS = "#00E676".toColorInt()
-private val SAT_NAVIGATION = "#448AFF".toColorInt()
-private val SAT_EARTH_OBS = "#90EE90".toColorInt()
-private val SAT_MILITARY = "#FF3D3D".toColorInt()
-private val SAT_SCIENCE = "#FFD700".toColorInt()
-private val SAT_OTHER = "#00E5FF".toColorInt()
+private val SAT_COMMS = EntityColors.SAT_COMMS.toColorInt()
+private val SAT_NAVIGATION = EntityColors.SAT_NAVIGATION.toColorInt()
+private val SAT_EARTH_OBS = EntityColors.SAT_EARTH_OBS.toColorInt()
+private val SAT_MILITARY = EntityColors.SAT_MILITARY.toColorInt()
+private val SAT_SCIENCE = EntityColors.SAT_SCIENCE.toColorInt()
+private val SAT_OTHER = EntityColors.SAT_OTHER.toColorInt()
 
-private val NEWS_COLOR = "#00E5FF".toColorInt()
+private val NEWS_COLOR = EntityColors.NEWS.toColorInt()
 
-private val CCTV_COLOR = "#00E5FF".toColorInt()
+private val CCTV_COLOR = EntityColors.CCTV.toColorInt()
+
+private val TRAFFIC_MINOR = EntityColors.TRAFFIC_MINOR.toColorInt()
+private val TRAFFIC_MODERATE = EntityColors.TRAFFIC_MODERATE.toColorInt()
+private val TRAFFIC_MAJOR = EntityColors.TRAFFIC_MAJOR.toColorInt()
+private val TRAFFIC_CLOSURE = EntityColors.TRAFFIC_CLOSURE.toColorInt()
 
 /**
  * Adds/updates one GeoJSON source + circle layer per [MapLayer] on the given MapLibre [style].
@@ -91,9 +97,31 @@ class LayersController(private val style: Style, private val context: Context) {
                     Expression.stop("MILITARY", Expression.literal("flight-military")),
                 )
             ),
-            iconSize = 0.7f,
+            iconSize = PropertyFactory.iconSize(0.7f),
             iconRotate = PropertyFactory.iconRotate(Expression.get("heading")),
         )
+    }
+
+    /** The selected flight's trajectory — either its actual flown path (adsb.lol trace) or a
+     * synthetic great-circle route, whichever MapViewModel.FlightEnrichment.trackForMap picked.
+     * Null/empty clears the line (dialog closed, or nothing to draw for this flight). */
+    fun setFlightTrack(track: List<List<Double>>?) {
+        val features = if (track.isNullOrEmpty()) {
+            emptyList()
+        } else {
+            val line = LineString.fromLngLats(track.map { (lng, lat) -> Point.fromLngLat(lng, lat) })
+            listOf(Feature.fromGeometry(line))
+        }
+        updateSource("flight-track-source", features)
+        if (style.getLayer("flight-track-layer") == null) {
+            val layer = LineLayer("flight-track-layer", "flight-track-source").withProperties(
+                PropertyFactory.lineColor(FLIGHT_COMMERCIAL),
+                PropertyFactory.lineWidth(2.5f),
+                PropertyFactory.lineOpacity(0.85f),
+                PropertyFactory.lineDasharray(arrayOf(2f, 1.5f)),
+            )
+            style.addLayer(layer)
+        }
     }
 
     fun setEarthquakes(earthquakes: List<Earthquake>) {
@@ -134,7 +162,7 @@ class LayersController(private val style: Style, private val context: Context) {
             layerId = "fires-layer",
             sourceId = "fires-source",
             iconImage = PropertyFactory.iconImage("fire-icon"),
-            iconSize = 0.45f,
+            iconSize = PropertyFactory.iconSize(0.45f),
         )
     }
 
@@ -214,7 +242,7 @@ class LayersController(private val style: Style, private val context: Context) {
                     Expression.stop("naval", Expression.literal("port-naval")),
                 )
             ),
-            iconSize = 0.55f,
+            iconSize = PropertyFactory.iconSize(0.55f),
         )
 
         val chokepointFeatures = maritime.chokepoints.mapIndexed { index, choke ->
@@ -257,7 +285,7 @@ class LayersController(private val style: Style, private val context: Context) {
             layerId = "ships-layer",
             sourceId = "ships-source",
             iconImage = PropertyFactory.iconImage("ship-icon"),
-            iconSize = 0.5f,
+            iconSize = PropertyFactory.iconSize(0.5f),
             iconRotate = PropertyFactory.iconRotate(Expression.get("heading")),
         )
     }
@@ -294,7 +322,7 @@ class LayersController(private val style: Style, private val context: Context) {
                     Expression.stop("other", Expression.literal("sat-other")),
                 )
             ),
-            iconSize = 0.5f,
+            iconSize = PropertyFactory.iconSize(0.5f),
         )
     }
 
@@ -317,13 +345,14 @@ class LayersController(private val style: Style, private val context: Context) {
     }
 
     fun setCyberAttacks(attacks: List<CyberAttack>) {
-        val features = attacks.map { attack ->
+        val features = attacks.mapIndexed { index, attack ->
             // A curved arc, not a straight line — see ArcMath — echoing the flying arcs the
             // web app animates for these. The MapViewModel-driven pulse layer below travels
             // along this exact same curve.
             val curve = ArcMath.curve(attack.srcLng, attack.srcLat, attack.dstLng, attack.dstLat)
             val line = LineString.fromLngLats(curve.map { (lng, lat) -> Point.fromLngLat(lng, lat) })
             Feature.fromGeometry(line).apply {
+                addNumberProperty("idx", index)
                 addNumberProperty("severity", attack.severity)
                 attack.malware?.let { addStringProperty("malware", it) }
             }
@@ -389,7 +418,17 @@ class LayersController(private val style: Style, private val context: Context) {
             layerId = "cctv-unclustered",
             sourceId = "cctv-source",
             iconImage = PropertyFactory.iconImage("cctv-camera"),
-            iconSize = 0.75f,
+            // Bigger when zoomed out (a lone unclustered dot is easy to lose in a huge visible
+            // area) tapering down to a normal size once zoomed in close to it.
+            iconSize = PropertyFactory.iconSize(
+                Expression.interpolate(
+                    Expression.linear(),
+                    Expression.zoom(),
+                    Expression.stop(3f, Expression.literal(1.4f)),
+                    Expression.stop(8f, Expression.literal(1.1f)),
+                    Expression.stop(14f, Expression.literal(0.85f)),
+                )
+            ),
             filter = Expression.not(Expression.has("point_count")),
         )
     }
@@ -421,6 +460,60 @@ class LayersController(private val style: Style, private val context: Context) {
         )
     }
 
+    /** TomTom's own 0-4 magnitude scale, straight from the backend — see
+     * [EntityColors.trafficMagnitudeHex] for the same bands used on the dialog accent. Draws two
+     * layers from the same data: the affected road segment itself (a colored line — the real
+     * geometry TomTom reports, not a synthetic shape) plus a small circle at its midpoint, which
+     * stays the actual tap target (`idx`-indexed, matching [MapScreen]'s `handleInfoTap` — the
+     * line features don't carry that index, so tapping the line itself does nothing, only the
+     * dot). An incident with no usable geometry (fewer than 2 coordinate pairs) still gets its
+     * dot, just no line. */
+    fun setTrafficIncidents(incidents: List<TrafficIncident>) {
+        val pointFeatures = incidents.mapIndexed { index, incident ->
+            feature(incident.lng, incident.lat) {
+                addNumberProperty("idx", index)
+                addNumberProperty("magnitude", incident.magnitude ?: 0)
+            }
+        }
+        updateSource("traffic-source", pointFeatures)
+        ensureCircleLayer(
+            layerId = "traffic-layer",
+            sourceId = "traffic-source",
+            color = PropertyFactory.circleColor(trafficMagnitudeColorExpression()),
+            radius = PropertyFactory.circleRadius(6f),
+        )
+
+        val lineFeatures = incidents.mapNotNull { incident ->
+            val points = incident.geometry
+                ?.mapNotNull { pair -> pair.takeIf { it.size >= 2 }?.let { Point.fromLngLat(it[0], it[1]) } }
+                ?: emptyList()
+            if (points.size < 2) return@mapNotNull null
+            Feature.fromGeometry(LineString.fromLngLats(points)).apply {
+                addNumberProperty("magnitude", incident.magnitude ?: 0)
+            }
+        }
+        updateSource("traffic-lines-source", lineFeatures)
+        if (style.getLayer("traffic-lines-layer") == null) {
+            val layer = LineLayer("traffic-lines-layer", "traffic-lines-source").withProperties(
+                PropertyFactory.lineColor(trafficMagnitudeColorExpression()),
+                PropertyFactory.lineWidth(3f),
+                PropertyFactory.lineOpacity(0.85f),
+            )
+            // Under the circle/count layers, not above — a wide, saturated line shouldn't cover
+            // the tap-target dot it belongs to.
+            style.addLayerBelow(layer, "traffic-layer")
+        }
+    }
+
+    private fun trafficMagnitudeColorExpression(): Expression = Expression.match(
+        Expression.get("magnitude"),
+        Expression.color(TRAFFIC_MINOR),
+        Expression.stop(1, Expression.color(TRAFFIC_MINOR)),
+        Expression.stop(2, Expression.color(TRAFFIC_MODERATE)),
+        Expression.stop(3, Expression.color(TRAFFIC_MAJOR)),
+        Expression.stop(4, Expression.color(TRAFFIC_CLOSURE)),
+    )
+
     private val layerIdsByMapLayer: Map<MapLayer, List<String>> = mapOf(
         MapLayer.FLIGHTS to listOf("flights-layer"),
         MapLayer.EARTHQUAKES to listOf("earthquakes-layer"),
@@ -433,6 +526,7 @@ class LayersController(private val style: Style, private val context: Context) {
         MapLayer.CYBER_ATTACKS to listOf("cyber-attacks-layer", "cyber-attacks-pulse-layer"),
         MapLayer.CCTV to listOf("cctv-clusters", "cctv-cluster-count", "cctv-unclustered"),
         MapLayer.OSINT to listOf("osint-layer"),
+        MapLayer.TRAFFIC to listOf("traffic-layer", "traffic-lines-layer"),
     )
 
     fun setLayerVisible(layer: MapLayer, visible: Boolean) {
@@ -482,14 +576,14 @@ class LayersController(private val style: Style, private val context: Context) {
         layerId: String,
         sourceId: String,
         iconImage: PropertyValue<*>,
-        iconSize: Float,
+        iconSize: PropertyValue<*>,
         iconRotate: PropertyValue<*>? = null,
         filter: Expression? = null,
     ) {
         if (style.getLayer(layerId) != null) return
         val properties = buildList {
             add(iconImage)
-            add(PropertyFactory.iconSize(iconSize))
+            add(iconSize)
             add(PropertyFactory.iconAllowOverlap(true))
             add(PropertyFactory.iconIgnorePlacement(true))
             add(PropertyFactory.iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP))
@@ -521,15 +615,30 @@ class LayersController(private val style: Style, private val context: Context) {
         if (style.getLayer(clustersLayerId) == null) {
             val clusters = CircleLayer(clustersLayerId, sourceId).withProperties(
                 PropertyFactory.circleColor(dotColor),
+                // Bumped up and made zoom-aware on top of the existing point_count step: at a
+                // whole-country zoom (e.g. seeing all of France) a flat 14-24px bubble reads as
+                // a near-invisible speck, so scale everything up the further out you are.
                 PropertyFactory.circleRadius(
-                    Expression.step(
-                        Expression.toNumber(Expression.get("point_count")),
-                        Expression.literal(14f),
-                        Expression.stop(50, Expression.literal(18f)),
-                        Expression.stop(500, Expression.literal(24f)),
+                    Expression.product(
+                        Expression.step(
+                            Expression.toNumber(Expression.get("point_count")),
+                            Expression.literal(16f),
+                            Expression.stop(50, Expression.literal(20f)),
+                            Expression.stop(500, Expression.literal(26f)),
+                        ),
+                        Expression.interpolate(
+                            Expression.linear(),
+                            Expression.zoom(),
+                            Expression.stop(3f, Expression.literal(1.6f)),
+                            Expression.stop(8f, Expression.literal(1.2f)),
+                            Expression.stop(13f, Expression.literal(1f)),
+                        ),
                     )
                 ),
-                PropertyFactory.circleOpacity(0.75f),
+                PropertyFactory.circleOpacity(0.85f),
+                PropertyFactory.circleStrokeWidth(2f),
+                PropertyFactory.circleStrokeColor(android.graphics.Color.WHITE),
+                PropertyFactory.circleStrokeOpacity(0.9f),
             )
             clusters.setFilter(Expression.has("point_count"))
             style.addLayer(clusters)
@@ -537,8 +646,10 @@ class LayersController(private val style: Style, private val context: Context) {
         if (style.getLayer(countLayerId) == null) {
             val counts = SymbolLayer(countLayerId, sourceId).withProperties(
                 PropertyFactory.textField(Expression.toString(Expression.get("point_count"))),
-                PropertyFactory.textSize(12f),
+                PropertyFactory.textSize(13f),
                 PropertyFactory.textColor(android.graphics.Color.WHITE),
+                PropertyFactory.textHaloColor(android.graphics.Color.BLACK),
+                PropertyFactory.textHaloWidth(1f),
                 PropertyFactory.textIgnorePlacement(true),
                 PropertyFactory.textAllowOverlap(true),
             )

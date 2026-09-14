@@ -25,4 +25,7 @@ data class CctvCamera(
     @SerialName("feed_url") val feedUrl: String? = null,
     @SerialName("stream_url") val streamUrl: String? = null,
     val source: String? = null,
+    /** The camera's own page (SkylineWebcams, APRR...) — a fallback link so a stopped/frozen
+     * feed (a short, non-looping clip that finished playing, a dead snapshot) isn't a dead end. */
+    @SerialName("external_url") val externalUrl: String? = null,
 )

@@ -43,4 +43,37 @@ class DeadReckoningTest {
         val (_, lngAt60) = DeadReckoning.project(60.0, 0.0, headingDeg = 90.0, speedKnots = 60.0, elapsedMs = 3_600_000)
         assertEquals(lngAtEquator * 2, lngAt60, 0.01)
     }
+
+    @Test
+    fun `bearing points due east, north, west and south for the corresponding fix pairs`() {
+        assertEquals(90.0, DeadReckoning.bearing(0.0, 0.0, 0.0, 10.0), 1e-9)
+        assertEquals(0.0, DeadReckoning.bearing(0.0, 0.0, 10.0, 0.0), 1e-9)
+        assertEquals(270.0, DeadReckoning.bearing(0.0, 0.0, 0.0, -10.0), 1e-9)
+        assertEquals(180.0, DeadReckoning.bearing(0.0, 0.0, -10.0, 0.0), 1e-9)
+    }
+
+    @Test
+    fun `speedKnots is zero for a zero elapsed time or an unmoved fix`() {
+        assertEquals(0.0, DeadReckoning.speedKnots(10.0, 20.0, 10.5, 20.5, elapsedMs = 0), 0.0)
+        assertEquals(0.0, DeadReckoning.speedKnots(10.0, 20.0, 10.0, 20.0, elapsedMs = 60_000), 0.0)
+    }
+
+    @Test
+    fun `speedKnots halves when the same displacement is spread over twice the time`() {
+        val fast = DeadReckoning.speedKnots(10.0, 20.0, 11.0, 21.0, elapsedMs = 60_000)
+        val slow = DeadReckoning.speedKnots(10.0, 20.0, 11.0, 21.0, elapsedMs = 120_000)
+        assertEquals(fast / 2, slow, 1e-6)
+    }
+
+    @Test
+    fun `bearing and speedKnots derived from two fixes roughly reproduce the second when projected forward`() {
+        // This is exactly how satellite movement is animated: no reported heading/speed, so
+        // MapViewModel infers one from two consecutive polls and hands it to project().
+        val elapsed = 3_600_000L
+        val heading = DeadReckoning.bearing(10.0, 20.0, 10.5, 20.3)
+        val speed = DeadReckoning.speedKnots(10.0, 20.0, 10.5, 20.3, elapsed)
+        val (lat, lng) = DeadReckoning.project(10.0, 20.0, heading, speed, elapsed)
+        assertEquals(10.5, lat, 0.01)
+        assertEquals(20.3, lng, 0.01)
+    }
 }

@@ -23,6 +23,13 @@ data class Port(
     val type: String, // container | energy | naval
     val volume: String? = null,
     val congestion: String? = null,
+    /** Global container-traffic rank — container ports only, and only the busier ones. */
+    val rank: Int? = null,
+    /** Naval bases only — which fleet is based there, e.g. "US Pacific Fleet". */
+    val fleet: String? = null,
+    /** Estimated ship dwell time, derived server-side from nearby AIS traffic — container ports
+     * with enough live ship data only, e.g. "1-2 Days". */
+    @SerialName("dwell_time") val dwellTime: String? = null,
 )
 
 @Serializable

@@ -2,22 +2,16 @@ package com.osiris.app.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val OsirisBackground = Color(0xFF0A0E14)
-val OsirisSurface = Color(0xFF12161F)
-val OsirisSurfaceVariant = Color(0xFF1B2130)
-val OsirisAccent = Color(0xFF00E5FF)
-val OsirisAccentDim = Color(0xFF0090A6)
-val OsirisWarning = Color(0xFFFFB020)
-val OsirisDanger = Color(0xFFFF3B3B)
-val OsirisTextPrimary = Color(0xFFE6F1F5)
-val OsirisTextSecondary = Color(0xFF8A97A6)
-
-val FlightCommercial = Color(0xFF00E5FF)
-val FlightPrivate = Color(0xFFFFD54A)
-val FlightJet = Color(0xFFE040FB)
-val FlightMilitary = Color(0xFFFF5252)
-
-val SeverityLow = Color(0xFF4CD97B)
-val SeverityMedium = Color(0xFFFFB020)
-val SeverityHigh = Color(0xFFFF5252)
-val SeverityWar = Color(0xFFB00020)
+// Pulled directly from osirisai.live's own CSS custom properties (:root), not guessed — its
+// actual brand/border accent is gold, with cyan reserved for live data readouts (clock, status
+// figures) rather than UI chrome. Verified live 2026-09 via getComputedStyle on the site itself.
+val OsirisBackground = Color(0xFF04040A) // --bg-void
+val OsirisSurface = Color(0xFF0C0E1A) // --bg-secondary
+val OsirisSurfaceVariant = Color(0xFF121628) // --bg-tertiary
+val OsirisAccent = Color(0xFFD4AF37) // --gold-primary — primary/border/active-state accent
+val OsirisAccentLight = Color(0xFFF0D060) // --gold-light — active toggle/button state
+val OsirisAccentDim = Color(0xFF00E5FF) // --cyan-primary — secondary accent, live data readouts
+val OsirisWarning = Color(0xFFFF9500) // --alert-orange
+val OsirisDanger = Color(0xFFFF3D3D) // --alert-red
+val OsirisTextPrimary = Color(0xFFE8E6E0) // --text-primary
+val OsirisTextSecondary = Color(0xFF9B978E) // --text-secondary

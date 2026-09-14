@@ -1,5 +1,10 @@
 package com.osiris.app.map
 
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,7 +16,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -32,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImagePainter
@@ -45,13 +54,23 @@ private const val SNAPSHOT_REFRESH_MS = 3000L
 
 /**
  * Shows the closest thing to "live" each camera actually offers: real MP4 playback (Media3)
- * for the handful of cameras with [CctvCamera.streamUrl] (e.g. Quebec 511), or an
+ * for the handful of cameras with [CctvCamera.streamUrl] (e.g. Quebec 511, APRR/AREA), or an
  * auto-refreshing [CctvCamera.feedUrl] snapshot for the rest — most Osiris CCTV sources
  * (TfL, Caltrans, WSDOT...) only ever expose a periodically-updated JPEG, not real video, so
  * that refresh loop *is* the live view for them.
+ *
+ * Some video sources (APRR/AREA in particular) are a short, regularly re-recorded clip rather
+ * than a true continuous stream — without looping it plays once and then just freezes on its
+ * last frame, reading as "the feed stopped". Tapping the video/snapshot (or the link below it,
+ * when [CctvCamera.externalUrl] is known) opens the camera's own page instead, so a frozen or
+ * broken feed isn't a dead end.
  */
 @Composable
 fun CctvViewerDialog(camera: CctvCamera, backendUrl: String, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val openExternal: () -> Unit = {
+        camera.externalUrl?.let { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))) }
+    }
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface) {
             Column(
@@ -73,13 +92,19 @@ fun CctvViewerDialog(camera: CctvCamera, backendUrl: String, onDismiss: () -> Un
 
                 val streamUrl = camera.streamUrl?.let { resolveUrl(it, backendUrl) }
                 val feedUrl = camera.feedUrl?.let { resolveUrl(it, backendUrl) }
+                val hasExternalUrl = camera.externalUrl != null
                 when {
-                    streamUrl != null -> CctvVideoStream(streamUrl)
-                    feedUrl != null -> CctvLiveSnapshot(feedUrl, camera.name)
+                    streamUrl != null -> CctvVideoStream(streamUrl, onClick = openExternal.takeIf { hasExternalUrl })
+                    feedUrl != null -> CctvLiveSnapshot(feedUrl, camera.name, onClick = openExternal.takeIf { hasExternalUrl })
                     else -> Text(
                         "Pas de flux disponible pour cette caméra",
                         style = MaterialTheme.typography.bodySmall,
                     )
+                }
+
+                if (hasExternalUrl) {
+                    Spacer(Modifier.height(10.dp))
+                    CctvExternalLinkButton(onClick = openExternal)
                 }
 
                 Spacer(Modifier.height(12.dp))
@@ -90,11 +115,15 @@ fun CctvViewerDialog(camera: CctvCamera, backendUrl: String, onDismiss: () -> Un
 }
 
 @Composable
-private fun CctvVideoStream(streamUrl: String) {
+private fun CctvVideoStream(streamUrl: String, onClick: (() -> Unit)?) {
     val context = LocalContext.current
     val exoPlayer = remember(streamUrl) {
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(streamUrl))
+            // APRR/AREA's clip is short and only re-recorded server-side every so often —
+            // looping it locally keeps the view "moving" between server-side refreshes instead
+            // of freezing on the last frame once Media3 reaches the end.
+            repeatMode = Player.REPEAT_MODE_ONE
             prepare()
             playWhenReady = true
         }
@@ -107,12 +136,13 @@ private fun CctvVideoStream(streamUrl: String) {
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(16f / 9f)
-            .clip(MaterialTheme.shapes.small),
+            .clip(MaterialTheme.shapes.small)
+            .let { if (onClick != null) it.clickable(onClick = onClick) else it },
     )
 }
 
 @Composable
-private fun CctvLiveSnapshot(feedUrl: String, cameraName: String?) {
+private fun CctvLiveSnapshot(feedUrl: String, cameraName: String?, onClick: (() -> Unit)?) {
     var snapshotUrl by remember(feedUrl) { mutableStateOf(cacheBust(feedUrl)) }
     LaunchedEffect(feedUrl) {
         while (isActive) {
@@ -134,7 +164,10 @@ private fun CctvLiveSnapshot(feedUrl: String, cameraName: String?) {
     SubcomposeAsyncImage(
         model = snapshotUrl,
         contentDescription = cameraName,
-        modifier = Modifier.fillMaxWidth().height(220.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(220.dp)
+            .let { if (onClick != null) it.clickable(onClick = onClick) else it },
         contentScale = ContentScale.Fit,
     ) {
         when (val state = painter.state) {
@@ -145,6 +178,35 @@ private fun CctvLiveSnapshot(feedUrl: String, cameraName: String?) {
                 color = MaterialTheme.colorScheme.error,
             )
             else -> SubcomposeAsyncImageContent()
+        }
+    }
+}
+
+@Composable
+private fun CctvExternalLinkButton(onClick: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+        shape = MaterialTheme.shapes.small,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "VOIR SUR LE SITE DE LA CAMÉRA",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.width(6.dp))
+            Icon(
+                Icons.Filled.OpenInNew,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp),
+            )
         }
     }
 }

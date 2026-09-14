@@ -16,4 +16,9 @@ enum class MapLayer(val label: String, val pollIntervalMs: Long, val defaultEnab
     CYBER_ATTACKS("Cyberattaques", 15_000L, defaultEnabled = false),
     CCTV("CCTV", 5 * 60_000L, defaultEnabled = false),
     OSINT("OSINT Telegram", 2 * 60_000L, defaultEnabled = true),
+    // TomTom's free-tier daily quota is the limiting factor here, not freshness: the backend
+    // fans out to 8 French metro-hub requests per poll (see /api/traffic — a single France-wide
+    // request 400s, TomTom caps bbox area at 10,000km²), so a short interval burns through the
+    // quota fast. 10 minutes keeps it under ~1,200 requests/day with room to spare.
+    TRAFFIC("Trafic routier", 10 * 60_000L, defaultEnabled = false),
 }

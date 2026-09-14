@@ -3,10 +3,11 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- Points north (0°) so icon-rotate=heading lines it up with travel direction. Rounded
-         nose cone + swept wings + separate tailplane, closer to a real airliner silhouette than
-         the previous dart-shaped glyph. -->
+    <!-- Points north (0°) so icon-rotate=heading lines it up with travel direction. Exact same
+         dart silhouette as the Osiris web app's canvas-drawn aircraft icon (OsirisMap.tsx
+         createIcon(): moveTo(cx,cy-0.4s) then the 9-point path below), just converted from its
+         size-relative canvas coordinates to a 24x24 vector viewport. -->
     <path
-        android:pathData="M21,16v-2l-8,-5V3.5C13,2.67 12.33,2 11.5,2S10,2.67 10,3.5V9l-8,5v2l8,-2.5V19l-2,1.5V22l3.5,-1L15,22v-1.5L13,19v-5.5L21,16z"
+        android:pathData="M12,2.4 L9.12,14.4 L2.4,16.8 L2.4,19.2 L9.12,15.6 L12,20.4 L14.88,15.6 L21.6,19.2 L21.6,16.8 L14.88,14.4 Z"
         android:fillColor="#FFFFFF" />
 </vector>

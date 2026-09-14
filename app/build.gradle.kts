@@ -7,14 +7,14 @@ plugins {
 
 android {
     namespace = "com.osiris.app"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.osiris.app"
         minSdk = 26
-        targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        targetSdk = 35
+        versionCode = 2
+        versionName = "0.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -91,6 +91,10 @@ dependencies {
     // (e.g. Quebec 511) instead of a periodically-refreshed JPEG snapshot.
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-ui:1.4.1")
+
+    // Home screen widget — Compose-based (Glance) rather than classic RemoteViews/XML, to stay
+    // consistent with the rest of the UI instead of introducing a second layout system.
+    implementation("androidx.glance:glance-appwidget:1.2.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

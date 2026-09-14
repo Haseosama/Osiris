@@ -10,6 +10,7 @@ import com.osiris.app.data.model.LiveNewsResponse
 import com.osiris.app.data.model.MaritimeResponse
 import com.osiris.app.data.model.OsintResponse
 import com.osiris.app.data.model.SatellitesResponse
+import com.osiris.app.data.model.TrafficResponse
 import com.osiris.app.data.model.WeatherResponse
 import okhttp3.ResponseBody
 import retrofit2.Response
@@ -54,6 +55,9 @@ interface OsirisApi {
 
     @GET("api/news")
     suspend fun osintNews(): OsintResponse
+
+    @GET("api/traffic")
+    suspend fun traffic(): TrafficResponse
 
     /** Dynamic endpoint for the RECON toolkit (scanner, DNS, WHOIS, CVE, sanctions...) —
      * each tool's query string differs too much to justify a typed method per tool. */
