@@ -12,6 +12,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,7 +41,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.ThreeDRotation
+import androidx.compose.material.icons.filled._3dRotation
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.FilterChip
@@ -772,7 +774,15 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                // Scrollable: 7 icon buttons at 40dp each plus spacing runs well past 300dp,
+                // which together with the OSIRIS logo/title on the left overflows a typical
+                // ~360-412dp-wide phone screen — a plain non-scrolling Row just lets the excess
+                // render past the screen edge, invisible and untappable, which is exactly what
+                // happened to the "Vue 3D" button added after this row was already nearly full.
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                ) {
                     HudIconButton(
                         icon = if (searchActive) Icons.Filled.Close else Icons.Filled.Search,
                         contentDescription = if (searchActive) "Fermer la recherche" else "Rechercher",
@@ -792,7 +802,7 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
                         },
                     )
                     HudIconButton(
-                        icon = Icons.Filled.ThreeDRotation,
+                        icon = Icons.Filled._3dRotation,
                         contentDescription = if (is3DEnabled) "Vue 2D" else "Vue 3D",
                         active = is3DEnabled,
                         onClick = { is3DEnabled = !is3DEnabled },
