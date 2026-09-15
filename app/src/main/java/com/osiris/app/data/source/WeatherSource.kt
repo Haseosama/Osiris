@@ -62,10 +62,10 @@ object WeatherSource {
             if (category == "wildfires" || category == "earthquakes") return@mapNotNull null
 
             val (typeLabel, icon, severity) = when (category) {
-                "severeStorms" -> Triple("Severe Storm", "cyclone", "high")
-                "volcanoes" -> Triple("Volcano Eruption", "volcano", "high")
-                "seaIce" -> Triple("Iceberg / Sea Ice", "ice", "medium")
-                else -> Triple(event.categories.firstOrNull()?.title ?: "Anomaly", "alert", "low")
+                "severeStorms" -> Triple("Tempête sévère", "cyclone", "high")
+                "volcanoes" -> Triple("Éruption volcanique", "volcano", "high")
+                "seaIce" -> Triple("Iceberg / banquise", "ice", "medium")
+                else -> Triple(event.categories.firstOrNull()?.title ?: "Anomalie", "alert", "low")
             }
 
             WeatherEvent(
@@ -116,9 +116,9 @@ object WeatherSource {
             val point = representativePoint(feature.geometry) ?: return@mapNotNull null
             WeatherEvent(
                 id = "nws-${props.id ?: props.event ?: point.first}",
-                title = props.headline ?: props.event ?: "NWS Weather Alert",
+                title = props.headline ?: props.event ?: "Alerte météo NWS",
                 category = "weatherAlerts",
-                type = props.event ?: "Weather Alert",
+                type = props.event ?: "Alerte météo",
                 icon = "weather",
                 severity = normalizeNwsSeverity(props.severity),
                 lat = point.first,
@@ -181,9 +181,9 @@ object WeatherSource {
     // ── GDACS (RSS/XML, regex-scraped — no JSON API) ──────────────────
 
     private val GDACS_TYPE_MAP = mapOf(
-        "TC" to ("Tropical Cyclone" to "cyclone"),
-        "FL" to ("Flood" to "flood"),
-        "DR" to ("Drought" to "drought"),
+        "TC" to ("Cyclone tropical" to "cyclone"),
+        "FL" to ("Inondation" to "flood"),
+        "DR" to ("Sécheresse" to "drought"),
     )
 
     private suspend fun fetchGdacs(): List<WeatherEvent> {

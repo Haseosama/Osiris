@@ -62,8 +62,59 @@ data class InfoDialogContent(
  * they don't have enough distinct facts to justify splitting into named groups. */
 private fun oneSection(rows: List<InfoRow>): List<InfoSection> = listOf(InfoSection(rows = rows))
 
-private fun epochMillisToText(millis: Long?): String? =
-    millis?.let { runCatching { Instant.ofEpochMilli(it).toString() }.getOrNull() }
+private fun epochMillisToText(millis: Long?): String? = millis?.let {
+    runCatching {
+        val local = Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault())
+        "%02d/%02d/%04d %02d:%02d".format(local.dayOfMonth, local.monthValue, local.year, local.hour, local.minute)
+    }.getOrNull()
+}
+
+/** USGS's own fixed vocabulary for the earthquake `type` field — verbatim from their API docs,
+ * not guessed: the large majority of events are "earthquake" itself, the rest are almost always
+ * one of these few non-tectonic causes USGS still catalogues on the same feed. */
+private fun earthquakeTypeLabel(type: String?): String? = when (type) {
+    null -> null
+    "earthquake" -> "Séisme"
+    "quarry blast" -> "Tir de carrière"
+    "explosion" -> "Explosion"
+    "quarry" -> "Carrière"
+    "nuclear explosion" -> "Explosion nucléaire"
+    "rock burst" -> "Coup de terrain"
+    "sonic boom" -> "Bang supersonique"
+    "landslide" -> "Glissement de terrain"
+    "acoustic noise" -> "Bruit acoustique"
+    "other event" -> "Autre événement"
+    else -> type.replaceFirstChar { it.uppercase() }
+}
+
+/** NASA FIRMS reports confidence differently per satellite: VIIRS as "l"/"n"/"h" (low/nominal/
+ * high), MODIS as a 0-100 percentage — [com.osiris.app.data.source.NasaFirmsSource] passes
+ * whichever the CSV column actually contains straight through unmodified. */
+private fun fireConfidenceLabel(confidence: String?): String = when (confidence?.lowercase()) {
+    "l", "low" -> "Faible"
+    "n", "nominal" -> "Nominale"
+    "h", "high" -> "Élevée"
+    "unknown", null -> "Inconnue"
+    else -> confidence.toIntOrNull()?.let { "$it %" } ?: confidence.replaceFirstChar { it.uppercase() }
+}
+
+/** The handful of EONET/app category ids actually produced by [com.osiris.app.data.source.WeatherSource]
+ * — falls back to the (now already French, see WeatherSource) `type` label for anything else
+ * rather than showing a raw camelCase id the user can't do anything with. */
+private fun weatherCategoryLabel(category: String?, fallbackType: String?): String = when (category) {
+    "severeStorms" -> "Tempête sévère"
+    "volcanoes" -> "Volcan"
+    "seaIce" -> "Glace de mer"
+    "weatherAlerts" -> "Alerte NWS"
+    "gdacs" -> "GDACS"
+    "drought" -> "Sécheresse"
+    "dustHaze" -> "Poussière / brume"
+    "manmade" -> "Origine humaine"
+    "snow" -> "Neige"
+    "tempExtremes" -> "Température extrême"
+    "waterColor" -> "Couleur de l'eau"
+    else -> fallbackType ?: "Inconnue"
+}
 
 /**
  * [route] (scheduled origin/destination/ETA/progress) and [aircraft] (real flown track +
@@ -101,7 +152,7 @@ fun FlightMarker.toInfoDialog(route: FlightRoute? = null, aircraft: AircraftDeta
 
     return InfoDialogContent(
         title = flight.callsign?.trim().takeUnless { it.isNullOrBlank() } ?: "Vol inconnu",
-        subtitle = category.name,
+        subtitle = EntityColors.flightCategoryLabel(category.name),
         routeHeader = route?.takeIf { it.found }?.let {
             FlightRouteHeader(
                 originCode = it.origin?.let(::airportCode),
@@ -151,7 +202,7 @@ fun Earthquake.toInfoDialog(): InfoDialogContent = InfoDialogContent(
         listOfNotNull(
             depth?.let { InfoRow("Profondeur", "${it.toInt()} km") },
             epochMillisToText(time)?.let { InfoRow("Date", it) },
-            type?.let { InfoRow("Type", it) },
+            earthquakeTypeLabel(type)?.let { InfoRow("Type", it) },
             tsunami?.takeIf { it == 1 }?.let { InfoRow("Alerte tsunami", "oui") },
         )
     ),
@@ -161,11 +212,11 @@ fun Earthquake.toInfoDialog(): InfoDialogContent = InfoDialogContent(
 
 fun FireEvent.toInfoDialog(): InfoDialogContent = InfoDialogContent(
     title = title ?: "Incendie",
-    subtitle = type,
+    subtitle = if (type == "volcano") "Volcan" else "Incendie",
     accentHex = EntityColors.FIRE,
     sections = oneSection(
         listOfNotNull(
-            confidence?.let { InfoRow("Confiance", it) },
+            InfoRow("Confiance", fireConfidenceLabel(confidence)),
             brightness?.let { InfoRow("Luminosité", it.toInt().toString()) },
             frp?.let { InfoRow("Puissance radiative (FRP)", it.toInt().toString()) },
             date?.let { InfoRow("Date", it) },
@@ -179,11 +230,15 @@ fun FireEvent.toInfoDialog(): InfoDialogContent = InfoDialogContent(
 
 fun WeatherEvent.toInfoDialog(): InfoDialogContent = InfoDialogContent(
     title = title ?: "Événement météo",
-    subtitle = severity,
+    subtitle = when (severity) {
+        "high" -> "Sévère"
+        "medium" -> "Modérée"
+        else -> "Faible"
+    },
     accentHex = EntityColors.WEATHER,
     sections = oneSection(
         listOfNotNull(
-            category?.let { InfoRow("Catégorie", it) },
+            InfoRow("Catégorie", weatherCategoryLabel(category, type)),
             type?.let { InfoRow("Type", it) },
             date?.let { InfoRow("Date", it) },
             expires?.let { InfoRow("Expire", it) },
@@ -195,7 +250,7 @@ fun WeatherEvent.toInfoDialog(): InfoDialogContent = InfoDialogContent(
 
 fun ConflictZone.toInfoDialog(): InfoDialogContent = InfoDialogContent(
     title = label,
-    subtitle = severity,
+    subtitle = EntityColors.conflictSeverityLabel(severity),
     accentHex = EntityColors.conflictSeverityHex(severity),
     sections = oneSection(
         listOfNotNull(
@@ -211,7 +266,7 @@ fun ConflictZone.toInfoDialog(): InfoDialogContent = InfoDialogContent(
 
 fun Port.toInfoDialog(): InfoDialogContent = InfoDialogContent(
     title = name,
-    subtitle = type,
+    subtitle = EntityColors.portTypeLabel(type),
     accentHex = when (type) {
         "energy" -> EntityColors.PORT_ENERGY
         "naval" -> EntityColors.PORT_NAVAL
@@ -223,7 +278,7 @@ fun Port.toInfoDialog(): InfoDialogContent = InfoDialogContent(
             volume?.let { InfoRow("Volume", it) },
             rank?.let { InfoRow("Rang mondial", "#$it") },
             fleet?.let { InfoRow("Flotte", it) },
-            congestion?.let { InfoRow("Congestion", it) },
+            congestion?.let { InfoRow("Congestion", EntityColors.portCongestionLabel(it)) },
             dwellTime?.let { InfoRow("Temps d'attente estimé", it) },
         )
     ),
@@ -231,7 +286,7 @@ fun Port.toInfoDialog(): InfoDialogContent = InfoDialogContent(
 
 fun Chokepoint.toInfoDialog(): InfoDialogContent = InfoDialogContent(
     title = name,
-    subtitle = risk,
+    subtitle = EntityColors.chokepointRiskLabel(risk),
     sections = oneSection(listOfNotNull(traffic?.let { InfoRow("Trafic", it) })),
 )
 
@@ -258,7 +313,7 @@ fun Ship.toInfoDialog(): InfoDialogContent {
     )
     return InfoDialogContent(
         title = name?.takeIf { it.isNotBlank() } ?: "Navire",
-        subtitle = type,
+        subtitle = EntityColors.shipTypeLabel(type),
         accentHex = EntityColors.SHIP,
         sections = listOfNotNull(
             InfoSection("Navire", identity).takeIf { identity.isNotEmpty() },
@@ -283,13 +338,13 @@ fun Satellite.toInfoDialog(
     nextPassAttempted: Boolean = false,
 ): InfoDialogContent = InfoDialogContent(
     title = name,
-    subtitle = mission,
+    subtitle = EntityColors.satelliteMissionLabel(mission),
     accentHex = EntityColors.satelliteCategoryHex(category),
     sections = listOfNotNull(
         InfoSection(
             rows = listOfNotNull(
                 noradId?.let { InfoRow("NORAD ID", it) },
-                category?.let { InfoRow("Catégorie", it) },
+                InfoRow("Catégorie", EntityColors.satelliteCategoryLabel(category)),
                 launchYear?.let { InfoRow("Lancement", it.toString()) },
                 alt?.let { InfoRow("Altitude", "${it.toInt()} km") },
                 alt?.let { InfoRow("Orbite", orbitClass(it)) },

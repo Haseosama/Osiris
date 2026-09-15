@@ -489,14 +489,19 @@ object AisStreamSource {
                 }
             }
             val congestionRatio = if (nearby > 0) waiting.toDouble() / nearby else 0.0
+            // "SEVERE"/"CONGESTED"/"NORMAL" stay in English — LayersController/EntityColors don't
+            // currently match on Port.congestion, but this mirrors Chokepoint.risk/Port.type just
+            // below, which do; keeping every one of these internal status codes in the same
+            // language avoids a trap for whoever adds a congestion-based marker color later.
+            // EntityColors.portCongestionLabel translates it for display.
             val (status, dwell) = when {
-                congestionRatio > 0.6 || waiting > 30 -> "SEVERE" to "7+ Days"
-                congestionRatio > 0.4 || waiting > 15 -> "CONGESTED" to "3-5 Days"
-                else -> "NORMAL" to "1-2 Days"
+                congestionRatio > 0.6 || waiting > 30 -> "SEVERE" to "7+ jours"
+                congestionRatio > 0.4 || waiting > 15 -> "CONGESTED" to "3-5 jours"
+                else -> "NORMAL" to "1-2 jours"
             }
             Port(
                 name = port.name, country = port.country, lat = port.lat, lng = port.lng, type = port.type,
-                volume = if (port.volume.isNotEmpty()) "${port.volume} | LIVE: $nearby (WAITING: $waiting)" else null,
+                volume = if (port.volume.isNotEmpty()) "${port.volume} | EN DIRECT : $nearby (EN ATTENTE : $waiting)" else null,
                 congestion = status, rank = port.rank, fleet = port.fleet, dwellTime = dwell,
             )
         }
@@ -514,7 +519,7 @@ object AisStreamSource {
                 nearby > 5 && choke.risk == "LOW" -> "ELEVATED"
                 else -> choke.risk
             }
-            Chokepoint(name = choke.name, lat = choke.lat, lng = choke.lng, traffic = "${choke.traffic} | LIVE SHIPS: $nearby", risk = risk)
+            Chokepoint(name = choke.name, lat = choke.lat, lng = choke.lng, traffic = "${choke.traffic} | NAVIRES EN DIRECT : $nearby", risk = risk)
         }
 
         val shipDtos = ships.mapNotNull { s ->

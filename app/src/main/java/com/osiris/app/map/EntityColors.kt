@@ -90,4 +90,90 @@ object EntityColors {
         2 -> TRAFFIC_MODERATE
         else -> TRAFFIC_MINOR
     }
+
+    // ── Display labels for internal status codes ───────────────────────
+    // These codes (category/type/severity/risk strings) are also used verbatim as map-icon match
+    // keys elsewhere (LayersController's Expression.match calls, AisStreamSource's own congestion
+    // logic) — so unlike the WeatherSource literals that got translated at the source, these stay
+    // in English internally and only get translated here, at the one place they're actually
+    // shown to the user.
+
+    /** [com.osiris.app.data.source.CelesTrakSatelliteSource.classifyMission]'s own output values
+     * — also used there as match keys for [satelliteCategoryHex]'s category derivation, so (same
+     * rule as everywhere else on this page) only translated here at display time, not at the
+     * source. */
+    fun satelliteMissionLabel(mission: String?): String = when (mission) {
+        "Military Recon" -> "Reconnaissance militaire"
+        "NRO Classified" -> "NRO (classifié)"
+        "SAR Imaging" -> "Imagerie radar (SAR)"
+        "SIGINT" -> "Renseignement électromagnétique"
+        "Navigation" -> "Navigation"
+        "Early Warning" -> "Alerte précoce"
+        "Commercial Comms" -> "Communications commerciales"
+        "Earth Imaging" -> "Imagerie terrestre"
+        "Commercial Imaging" -> "Imagerie commerciale"
+        "Space Station" -> "Station spatiale"
+        "Russian Military" -> "Militaire russe"
+        "Chinese Recon" -> "Reconnaissance chinoise"
+        "Weather" -> "Météorologie"
+        "Earth Observation" -> "Observation de la Terre"
+        "Earth Science" -> "Sciences de la Terre"
+        "Space Telescope" -> "Télescope spatial"
+        else -> "Inconnue"
+    }
+
+    fun satelliteCategoryLabel(category: String?): String = when (category) {
+        "comms" -> "Communications"
+        "navigation" -> "Navigation"
+        "earth_obs" -> "Observation Terre"
+        "military" -> "Militaire"
+        "science" -> "Science"
+        else -> "Autre / débris"
+    }
+
+    fun conflictSeverityLabel(severity: String?): String = when (severity) {
+        "war" -> "Guerre"
+        "high" -> "Élevée"
+        "elevated" -> "Modérée+"
+        "moderate" -> "Modérée"
+        else -> "Faible"
+    }
+
+    fun portTypeLabel(type: String?): String = when (type) {
+        "container" -> "Port à conteneurs"
+        "energy" -> "Terminal énergétique"
+        "naval" -> "Base navale"
+        else -> "Port"
+    }
+
+    fun portCongestionLabel(congestion: String?): String = when (congestion) {
+        "SEVERE" -> "Sévère"
+        "CONGESTED" -> "Encombré"
+        "NORMAL" -> "Normal"
+        else -> congestion ?: "Inconnu"
+    }
+
+    fun chokepointRiskLabel(risk: String?): String = when (risk) {
+        "CRITICAL" -> "Critique"
+        "HIGH" -> "Élevé"
+        "ELEVATED" -> "Élevé+"
+        "MODERATE" -> "Modéré"
+        "LOW" -> "Faible"
+        else -> risk ?: "Inconnu"
+    }
+
+    fun shipTypeLabel(type: String?): String = when (type) {
+        "tanker" -> "Pétrolier / navire-citerne"
+        "military" -> "Navire militaire"
+        "cargo" -> "Cargo"
+        else -> "Navire"
+    }
+
+    fun flightCategoryLabel(category: String?): String = when (category) {
+        "COMMERCIAL" -> "Commercial"
+        "PRIVATE" -> "Privé"
+        "JET" -> "Jet d'affaires"
+        "MILITARY" -> "Militaire"
+        else -> category ?: "Inconnu"
+    }
 }

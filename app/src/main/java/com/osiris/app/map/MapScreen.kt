@@ -241,22 +241,22 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
             val flightMatches = flights.mapNotNull { marker ->
                 val callsign = marker.flight.callsign?.trim().orEmpty()
                 if (!callsign.contains(query, ignoreCase = true)) return@mapNotNull null
-                MapSearchResult(callsign, marker.category.name, marker.flight.lat, marker.flight.lng) {
+                MapSearchResult(callsign, EntityColors.flightCategoryLabel(marker.category.name), marker.flight.lat, marker.flight.lng) {
                     viewModel.selectFlight(marker)
                 }
             }.take(8)
             val portMatches = maritime.ports.mapNotNull { port ->
                 if (!port.name.contains(query, ignoreCase = true)) return@mapNotNull null
-                MapSearchResult(port.name, port.type, port.lat, port.lng) { viewModel.selectInfo(port.toInfoDialog()) }
+                MapSearchResult(port.name, EntityColors.portTypeLabel(port.type), port.lat, port.lng) { viewModel.selectInfo(port.toInfoDialog()) }
             }.take(8)
             val shipMatches = maritime.ships.mapNotNull { ship ->
                 val name = ship.name.orEmpty()
                 if (!name.contains(query, ignoreCase = true)) return@mapNotNull null
-                MapSearchResult(name, ship.type, ship.lat, ship.lng) { viewModel.selectShip(ship) }
+                MapSearchResult(name, EntityColors.shipTypeLabel(ship.type), ship.lat, ship.lng) { viewModel.selectShip(ship) }
             }.take(8)
             val satelliteMatches = satellites.mapNotNull { sat ->
                 if (!sat.name.contains(query, ignoreCase = true)) return@mapNotNull null
-                MapSearchResult(sat.name, sat.category, sat.lat, sat.lng) { viewModel.selectSatellite(sat) }
+                MapSearchResult(sat.name, EntityColors.satelliteCategoryLabel(sat.category), sat.lat, sat.lng) { viewModel.selectSatellite(sat) }
             }.take(8)
             val cctvMatches = cctvCameras.mapNotNull { camera ->
                 val name = camera.name.orEmpty()
