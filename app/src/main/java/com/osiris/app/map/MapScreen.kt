@@ -158,7 +158,7 @@ private val DEFAULT_CAMERA = CameraPosition.Builder().target(LatLng(20.0, 0.0)).
  * under the layer chips only while Satellites is active — this is the user's own control over
  * how many of the ~18-19k satellites end up animated/rendered, since comms (Starlink) and other
  * (tracked debris) alone are each in the thousands. */
-private val SATELLITE_CATEGORIES = listOf(
+internal val SATELLITE_CATEGORIES = listOf(
     "comms" to "Comms (Starlink…)",
     "navigation" to "Navigation",
     "earth_obs" to "Observation Terre",
@@ -1034,9 +1034,11 @@ private fun formatReplayTimestamp(epochMs: Long?): String {
 
 /** A "glass panel" control button — dark translucent circle with a cyan ring, brighter when
  * [active] — used for every icon control on the map instead of Material's plain flat IconButton,
- * for a HUD-console look consistent across the whole top bar. */
+ * for a HUD-console look consistent across the whole top bar. Internal (not private): reused
+ * as-is by [com.osiris.app.globe.GlobeScreen] so the globe's own controls share the exact same
+ * look instead of a second near-identical copy. */
 @Composable
-private fun HudIconButton(icon: ImageVector, contentDescription: String, onClick: () -> Unit, active: Boolean = false) {
+internal fun HudIconButton(icon: ImageVector, contentDescription: String, onClick: () -> Unit, active: Boolean = false) {
     val accent = MaterialTheme.colorScheme.primary
     Surface(
         onClick = onClick,
@@ -1056,8 +1058,9 @@ private fun HudIconButton(icon: ImageVector, contentDescription: String, onClick
     }
 }
 
+/** Reused as-is by [com.osiris.app.globe.GlobeScreen] — see [HudIconButton]'s own note. */
 @Composable
-private fun LayerToggleChip(layer: MapLayer, enabled: Boolean, error: String?, onClick: () -> Unit) {
+internal fun LayerToggleChip(layer: MapLayer, enabled: Boolean, error: String?, onClick: () -> Unit) {
     BadgedBox(badge = { if (error != null) Badge(containerColor = MaterialTheme.colorScheme.error) }) {
         FilterChip(
             selected = enabled,

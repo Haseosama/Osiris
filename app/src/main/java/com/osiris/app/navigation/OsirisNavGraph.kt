@@ -3,12 +3,14 @@ package com.osiris.app.navigation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.osiris.app.globe.GlobeScreen
 import com.osiris.app.map.MapScreen
+import com.osiris.app.map.MapViewModel
 import com.osiris.app.recon.ReconScreen
 import com.osiris.app.settings.SettingsScreen
 
@@ -45,6 +47,13 @@ fun OsirisNavGraph(navController: NavHostController = rememberNavController()) {
             ReconScreen(onBack = { navController.popBackStack() })
         }
         composable(Routes.GLOBE) {
+            // Shared with the MAP entry's own MapViewModel (rather than the default of scoping a
+            // fresh instance to this GLOBE entry) — see GlobeScreen's own doc for why: same layer
+            // polling/toggles/dialogs as the flat map, no second independent poll loop. Safe to
+            // assume the MAP entry exists: GLOBE is only ever reached by navigating from MAP (the
+            // start destination), so it's always below this one on the back stack.
+            val mapEntry = navController.getBackStackEntry(Routes.MAP)
+            val sharedViewModel: MapViewModel = viewModel(viewModelStoreOwner = mapEntry)
             GlobeScreen(
                 onBack = { navController.popBackStack() },
                 onZoomedToFlatMap = { lat, lng ->
@@ -52,6 +61,9 @@ fun OsirisNavGraph(navController: NavHostController = rememberNavController()) {
                     navController.previousBackStackEntry?.savedStateHandle?.set(JUMP_LNG_KEY, lng)
                     navController.popBackStack()
                 },
+                onOpenRecon = { navController.navigate(Routes.RECON) },
+                onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                viewModel = sharedViewModel,
             )
         }
     }

@@ -47,10 +47,11 @@ private const val FRAGMENT_SHADER = """
     }
 """
 
-// A separate, much simpler program for flight dots — flat-colored points rather than a lit,
-// textured mesh, so it isn't worth threading them through the sphere's own shader. Drawn with
-// GL_DEPTH_TEST still on (see onDrawFrame), so a dot on the far side of the globe is correctly
-// hidden behind it without any manual visible-hemisphere check.
+// A separate, much simpler program for entity dots (flights, ships, satellites, earthquakes...)
+// — flat-colored points rather than a lit, textured mesh, so it isn't worth threading them
+// through the sphere's own shader. Drawn with GL_DEPTH_TEST still on (see onDrawFrame), so a dot
+// on the far side of the globe is correctly hidden behind it without any manual visible-
+// hemisphere check.
 private const val POINT_VERTEX_SHADER = """
     uniform mat4 uMVPMatrix;
     attribute vec4 aPosition;
@@ -92,12 +93,14 @@ class GlobeRenderer : GLSurfaceView.Renderer {
      * this is the hand-off point from whichever thread loaded the bitmap to the GL thread. */
     @Volatile var pendingBitmap: Bitmap? = null
 
-    /** Built by [setFlightPositions] (any thread — it's plain buffer construction, no GL calls),
-     * read by [onDrawFrame] (GL thread only). Swapped as a whole new buffer on every update
-     * rather than mutated in place, so there's no window where the GL thread could read a
-     * half-written buffer. */
-    @Volatile private var flightBuffer: FloatBuffer? = null
-    @Volatile private var flightCount = 0
+    /** One named dot cloud per map layer (flights, ships, satellites, earthquakes...) — see
+     * [setPoints]. A [java.util.concurrent.ConcurrentHashMap] rather than a plain map: entries
+     * are replaced from whichever thread [GlobeScreen]'s per-layer polling effects run on, while
+     * [drawPoints] iterates it every frame on the GL thread — a plain HashMap would risk a
+     * ConcurrentModificationException the moment those overlap. */
+    private val pointSets = java.util.concurrent.ConcurrentHashMap<String, PointSet>()
+
+    private class PointSet(val buffer: FloatBuffer, val count: Int, val color: FloatArray)
 
     private lateinit var mesh: SphereMesh
     private var program = 0
@@ -205,40 +208,46 @@ class GlobeRenderer : GLSurfaceView.Renderer {
         GLES20.glDisableVertexAttribArray(aNormalLoc)
         GLES20.glDisableVertexAttribArray(aTexCoordLoc)
 
-        drawFlights()
+        drawPoints()
     }
 
-    /** Flight dots use the same mvpMatrix as the sphere — their positions (see
-     * [setFlightPositions]) are computed in the sphere's own model space (unrotated, on the unit
-     * sphere scaled slightly past its surface), so they need the same model rotation applied via
-     * the same MVP matrix to end up in the right place on the rotated globe, exactly like the
-     * sphere's own vertices do. Depth testing (still enabled from the sphere draw above) hides
-     * whichever dots are on the far side without any extra visibility check needed. */
-    private fun drawFlights() {
-        val buffer = flightBuffer ?: return
-        val count = flightCount
-        if (count == 0) return
-
+    /** Dots use the same mvpMatrix as the sphere — their positions (see [setPoints]) are computed
+     * in the sphere's own model space (unrotated, on the unit sphere scaled slightly past its
+     * surface), so they need the same model rotation applied via the same MVP matrix to end up in
+     * the right place on the rotated globe, exactly like the sphere's own vertices do. Depth
+     * testing (still enabled from the sphere draw above) hides whichever dots are on the far side
+     * without any extra visibility check needed. One [GLES20.glDrawArrays] call per layer (each
+     * with its own color) rather than merging every layer into one buffer — the per-layer set is
+     * rebuilt independently by [GlobeScreen]'s per-layer polling effects, and layer counts here
+     * (at most a few thousand) are nowhere near where that would start to matter. */
+    private fun drawPoints() {
+        if (pointSets.isEmpty()) return
         GLES20.glUseProgram(pointProgram)
-        buffer.position(0)
-        GLES20.glVertexAttribPointer(aPointPositionLoc, 3, GLES20.GL_FLOAT, false, 0, buffer)
         GLES20.glEnableVertexAttribArray(aPointPositionLoc)
         GLES20.glUniformMatrix4fv(uPointMvpMatrixLoc, 1, false, mvpMatrix, 0)
-        // Warm amber — reads clearly against both ocean blue and land greens/browns in the
-        // texture, and doesn't clash with the cyan flight markers the main flat map uses (this
-        // is deliberately a simpler, distinct-looking overview rather than trying to match it).
-        GLES20.glUniform4f(uPointColorLoc, 1f, 0.7f, 0.2f, 1f)
-        GLES20.glDrawArrays(GLES20.GL_POINTS, 0, count)
+        pointSets.values.forEach { set ->
+            if (set.count == 0) return@forEach
+            set.buffer.position(0)
+            GLES20.glVertexAttribPointer(aPointPositionLoc, 3, GLES20.GL_FLOAT, false, 0, set.buffer)
+            GLES20.glUniform4fv(uPointColorLoc, 1, set.color, 0)
+            GLES20.glDrawArrays(GLES20.GL_POINTS, 0, set.count)
+        }
         GLES20.glDisableVertexAttribArray(aPointPositionLoc)
     }
 
-    /** Rebuilds the flight-dot vertex buffer from scratch — called from [GlobeScreen]'s periodic
-     * poll, off the GL thread (safe: this only builds a plain direct FloatBuffer, no GL calls
-     * happen until [drawFlights] reads it back on the next [onDrawFrame]). */
-    fun setFlightPositions(latLngs: List<Pair<Double, Double>>) {
+    /** Rebuilds one named dot cloud from scratch — called from [GlobeScreen]'s per-layer polling
+     * effects, off the GL thread (safe: this only builds a plain direct FloatBuffer, no GL calls
+     * happen until [drawPoints] reads it back on the next [onDrawFrame]). An empty [latLngs]
+     * removes the layer's dots entirely (e.g. the user toggled that layer off) rather than leaving
+     * a stale zero-length entry behind. */
+    fun setPoints(key: String, latLngs: List<Pair<Double, Double>>, color: FloatArray) {
+        if (latLngs.isEmpty()) {
+            pointSets.remove(key)
+            return
+        }
         val floats = FloatArray(latLngs.size * 3)
         latLngs.forEachIndexed { i, (lat, lng) ->
-            val (x, y, z) = latLngToXyz(lat, lng, FLIGHT_DOT_RADIUS)
+            val (x, y, z) = latLngToXyz(lat, lng, POINT_RADIUS)
             floats[i * 3] = x
             floats[i * 3 + 1] = y
             floats[i * 3 + 2] = z
@@ -246,14 +255,13 @@ class GlobeRenderer : GLSurfaceView.Renderer {
         val buffer = ByteBuffer.allocateDirect(floats.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
         buffer.put(floats)
         buffer.position(0)
-        flightBuffer = buffer
-        flightCount = latLngs.size
+        pointSets[key] = PointSet(buffer, latLngs.size, color)
     }
 
     /** Forward version of [centerLatLng]'s inverse trig — must stay the mirror image of it (and
-     * of [SphereMesh]'s own (theta, phi) -> (x, y, z) formula) for a flight dot to land in the
-     * right place relative to the continents under it. [radius] slightly past the sphere's own
-     * 1.0 so the dot renders in front of the (opaque) surface instead of z-fighting with it. */
+     * of [SphereMesh]'s own (theta, phi) -> (x, y, z) formula) for a dot to land in the right
+     * place relative to the continents under it. [radius] slightly past the sphere's own 1.0 so
+     * the dot renders in front of the (opaque) surface instead of z-fighting with it. */
     private fun latLngToXyz(latDeg: Double, lngDeg: Double, radius: Float): Triple<Float, Float, Float> {
         val theta = Math.toRadians(90.0 - latDeg)
         val phi = Math.toRadians(180.0 - lngDeg)
@@ -343,7 +351,21 @@ class GlobeRenderer : GLSurfaceView.Renderer {
         return lat to lng
     }
 
+    /** Inverse of [centerLatLng]: the exact (rotationX, rotationY) pair that makes it report back
+     * (approximately) this same (lat, lng) — worked out by solving the same
+     * `RotateX(rotationX) * RotateY(rotationY) * v = (0,0,1)` relationship the other way around.
+     * `rotationX = lat` and `rotationY = 90 - lng` falls out directly (verified against
+     * [centerLatLng] at several reference points, e.g. (0,0) round-trips through
+     * rotationX=0/rotationY=90). Doesn't move anything itself — [GlobeScreen] uses this as the
+     * target for its own tween of [rotationX]/[rotationY], so a location jump animates smoothly
+     * instead of snapping instantly like a raw touch-driven change would look. */
+    fun rotationFor(lat: Double, lng: Double): Pair<Float, Float> {
+        val targetX = lat.coerceIn(-90.0, 90.0).toFloat()
+        val targetY = (90.0 - lng).toFloat()
+        return targetX to targetY
+    }
+
     private companion object {
-        const val FLIGHT_DOT_RADIUS = 1.02f
+        const val POINT_RADIUS = 1.02f
     }
 }
