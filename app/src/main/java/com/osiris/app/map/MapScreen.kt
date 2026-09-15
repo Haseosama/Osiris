@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ThreeDRotation
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.FilterChip
@@ -131,6 +132,16 @@ private const val SHIP_FOLLOW_EASE_MS = 90
 private const val SATELLITE_FOLLOW_ZOOM = 6.0
 private const val SATELLITE_FOLLOW_EASE_MS = 220
 
+// The manual "Vue 3D" toggle (as opposed to the chase-camera tilts above, which are entity-
+// specific and temporary) — a general-purpose tilt for browsing the map itself in perspective.
+// 55° matches the flight chase tilt, a good middle ground: enough to read as clearly 3D and show
+// the street style's building-3d extrusions (they need pitch>0 to look extruded at all — flat
+// from directly above they're indistinguishable from the 2D "building" fill layer underneath
+// them) and the hillshade relief's depth, without tipping so far the view becomes hard to
+// navigate. See LayersController.ensureTerrain for the hillshade layer this pairs with.
+private const val MAP_3D_TILT = 55.0
+private const val MAP_3D_EASE_MS = 500
+
 private fun satelliteStyleBuilder(): Style.Builder =
     Style.Builder()
         .withSource(RasterSource("esri-imagery", TileSet("2.1.0", ESRI_IMAGERY_URL), 256))
@@ -205,6 +216,7 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
     var hudCameraSnapshot by remember { mutableStateOf<HudCameraSnapshot?>(null) }
     var hudTheme by remember { mutableStateOf(HudTheme.DEFAULT) }
     var isReplayAutoPlaying by remember { mutableStateOf(false) }
+    var is3DEnabled by remember { mutableStateOf(false) }
 
     val mapViewPreferences = remember { MapViewPreferences(context) }
     val coroutineScope = rememberCoroutineScope()
@@ -412,7 +424,11 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
             MapStyleMode.SATELLITE -> satelliteStyleBuilder()
         }
         map.setStyle(builder) { style ->
-            layersController = LayersController(style, context)
+            // Hillshade relief only on the street style — layering synthetic shading over the
+            // satellite raster's own real photographic shadows reads as muddy/doubled, whereas
+            // the street style's flat-colored land polygons have no shading of their own to
+            // clash with. See LayersController.ensureTerrain.
+            layersController = LayersController(style, context, addTerrain = mapStyleMode == MapStyleMode.STREET)
         }
     }
 
@@ -524,19 +540,38 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
         map.easeCamera(CameraUpdateFactory.newCameraPosition(position), SATELLITE_FOLLOW_EASE_MS)
     }
 
-    // Eases the camera back to a flat, north-up view once chase mode ends the *programmatic*
-    // way — the dialog's own toggle switched off, or the dialog closed/another entity got
-    // selected (see MapViewModel.cameraResetTick's own doc for why the gesture-driven exit
-    // deliberately does NOT trigger this: there the user's own drag/tilt/rotate already is the
-    // camera state they want). A plain counter rather than keying on followedFlightKey itself,
-    // so two resets in a row aren't collapsed as "no change" by the StateFlow underneath.
+    // Eases the camera back to its "resting" view once chase mode ends the *programmatic* way —
+    // the dialog's own toggle switched off, or the dialog closed/another entity got selected (see
+    // MapViewModel.cameraResetTick's own doc for why the gesture-driven exit deliberately does
+    // NOT trigger this: there the user's own drag/tilt/rotate already is the camera state they
+    // want). Resting tilt is 0° normally, or the manual "Vue 3D" toggle's tilt if that's on — so
+    // stopping a flight/ship chase settles back into 3D mode rather than always flattening out
+    // from under it. Bearing always resets to north-up regardless: that's the chase's own
+    // heading-alignment being undone, unrelated to the 3D tilt. A plain counter rather than
+    // keying on followedFlightKey itself, so two resets in a row aren't collapsed as "no change"
+    // by the StateFlow underneath.
     LaunchedEffect(maplibreMap, cameraResetTick) {
         if (cameraResetTick == 0) return@LaunchedEffect
         val map = maplibreMap ?: return@LaunchedEffect
         val current = map.cameraPosition
-        if (current.tilt == 0.0 && current.bearing == 0.0) return@LaunchedEffect
-        val flat = CameraPosition.Builder(current).tilt(0.0).bearing(0.0).build()
-        map.easeCamera(CameraUpdateFactory.newCameraPosition(flat), FLIGHT_FOLLOW_EASE_MS)
+        val restingTilt = if (is3DEnabled) MAP_3D_TILT else 0.0
+        if (current.tilt == restingTilt && current.bearing == 0.0) return@LaunchedEffect
+        val resting = CameraPosition.Builder(current).tilt(restingTilt).bearing(0.0).build()
+        map.easeCamera(CameraUpdateFactory.newCameraPosition(resting), FLIGHT_FOLLOW_EASE_MS)
+    }
+
+    // The manual "Vue 3D" toggle — tilts (or flattens) the camera in place, independent of any
+    // entity chase. Only acts when nothing is currently being followed: a chase camera already
+    // owns the tilt at that point (its own FLIGHT/SHIP_FOLLOW_TILT), and the cameraResetTick
+    // effect above is what applies MAP_3D_TILT once the chase ends.
+    LaunchedEffect(maplibreMap, is3DEnabled) {
+        val map = maplibreMap ?: return@LaunchedEffect
+        if (followedFlightKey != null || followedShipKey != null || followedSatelliteKey != null) return@LaunchedEffect
+        val targetTilt = if (is3DEnabled) MAP_3D_TILT else 0.0
+        val current = map.cameraPosition
+        if (current.tilt == targetTilt) return@LaunchedEffect
+        val position = CameraPosition.Builder(current).tilt(targetTilt).build()
+        map.easeCamera(CameraUpdateFactory.newCameraPosition(position), MAP_3D_EASE_MS)
     }
 
     LaunchedEffect(layersController, flights) { layersController?.setFlights(flights) }
@@ -755,6 +790,12 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
                                 MapStyleMode.STREET
                             }
                         },
+                    )
+                    HudIconButton(
+                        icon = Icons.Filled.ThreeDRotation,
+                        contentDescription = if (is3DEnabled) "Vue 2D" else "Vue 3D",
+                        active = is3DEnabled,
+                        onClick = { is3DEnabled = !is3DEnabled },
                     )
                     HudIconButton(
                         icon = Icons.Filled.CenterFocusStrong,

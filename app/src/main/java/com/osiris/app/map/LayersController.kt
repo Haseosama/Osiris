@@ -1,6 +1,8 @@
 package com.osiris.app.map
 
 import android.content.Context
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.osiris.app.R
 import com.osiris.app.data.model.CctvCamera
 import com.osiris.app.data.model.ConflictZone
@@ -16,6 +18,7 @@ import com.osiris.app.data.model.TrafficIncident
 import com.osiris.app.data.model.WeatherEvent
 import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.CircleLayer
+import org.maplibre.android.style.layers.HillshadeLayer
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
@@ -23,6 +26,8 @@ import org.maplibre.android.style.layers.PropertyValue
 import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonOptions
 import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.android.style.sources.RasterDemSource
+import org.maplibre.android.style.sources.TileSet
 import org.maplibre.android.maps.Style
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
@@ -66,21 +71,40 @@ private val TRAFFIC_CLOSURE = EntityColors.TRAFFIC_CLOSURE.toColorInt()
  * Adds/updates one GeoJSON source + circle layer per [MapLayer] on the given MapLibre [style].
  * Data is pushed in via `set*` whenever a repository poll completes; visibility is toggled
  * independently so a layer can be hidden without losing its cached data.
+ *
+ * [addTerrain] wires up [ensureTerrain] once at construction — a style switch rebuilds this whole
+ * controller against a fresh [Style] (see MapScreen's LaunchedEffect(mapStyleMode)), so there's no
+ * separate "did we already add it" state to track across switches the way [registeredImages] does
+ * within one style's lifetime.
  */
-class LayersController(private val style: Style, private val context: Context) {
+class LayersController(private val style: Style, private val context: Context, addTerrain: Boolean = false) {
 
-    fun setFlights(markers: List<FlightMarker>) {
+    init {
+        if (addTerrain) ensureTerrain()
+    }
+
+    // Flights/ships/satellites rebuild their whole feature list at the dead-reckoning/live-
+    // propagation tick rate (100-250ms — see MapViewModel) rather than only on a poll, so unlike
+    // every other set* below they're worth keeping off the UI thread: mapIndexed{} over a few
+    // hundred entities several times a second is exactly the kind of steady drip of main-thread
+    // work that reads as janky scrolling/panning even though no single call is slow on its own.
+    // Only the pure-data construction moves to Dispatchers.Default — style.addImage/addSource/
+    // getSource/setGeoJson stay on the caller's thread throughout, since MapLibre's Style/Source
+    // classes are @UiThread.
+    suspend fun setFlights(markers: List<FlightMarker>) {
         ensureImage("flight-commercial", R.drawable.ic_plane, FLIGHT_COMMERCIAL)
         ensureImage("flight-private", R.drawable.ic_plane, FLIGHT_PRIVATE)
         ensureImage("flight-jet", R.drawable.ic_plane, FLIGHT_JET)
         ensureImage("flight-military", R.drawable.ic_plane, FLIGHT_MILITARY)
 
-        val features = markers.mapIndexed { index, marker ->
-            feature(marker.flight.lng, marker.flight.lat) {
-                addNumberProperty("idx", index)
-                addStringProperty("category", marker.category.name)
-                marker.flight.callsign?.let { addStringProperty("callsign", it) }
-                marker.flight.heading?.let { addNumberProperty("heading", it) }
+        val features = withContext(Dispatchers.Default) {
+            markers.mapIndexed { index, marker ->
+                feature(marker.flight.lng, marker.flight.lat) {
+                    addNumberProperty("idx", index)
+                    addStringProperty("category", marker.category.name)
+                    marker.flight.callsign?.let { addStringProperty("callsign", it) }
+                    marker.flight.heading?.let { addNumberProperty("heading", it) }
+                }
             }
         }
         updateSource("flights-source", features)
@@ -217,18 +241,42 @@ class LayersController(private val style: Style, private val context: Context) {
         )
     }
 
-    fun setMaritime(maritime: MaritimeResponse) {
+    // Called on every maritime dead-reckoning tick (100ms — see MapViewModel), not just the 20s
+    // poll, since ships (unlike ports/chokepoints) move — see setFlights' own doc for why the
+    // feature-list construction specifically moves off the UI thread here.
+    suspend fun setMaritime(maritime: MaritimeResponse) {
         ensureImage("port-container", R.drawable.ic_anchor, PORT_CONTAINER)
         ensureImage("port-energy", R.drawable.ic_anchor, PORT_ENERGY)
         ensureImage("port-naval", R.drawable.ic_anchor, PORT_NAVAL)
+        ensureImage("ship-icon", R.drawable.ic_boat, SHIP_COLOR)
 
-        val portFeatures = maritime.ports.mapIndexed { index, port ->
-            feature(port.lng, port.lat) {
-                addNumberProperty("idx", index)
-                addStringProperty("name", port.name)
-                addStringProperty("type", port.type)
-            }
+        val (portFeatures, chokepointFeatures, shipFeatures) = withContext(Dispatchers.Default) {
+            Triple(
+                maritime.ports.mapIndexed { index, port ->
+                    feature(port.lng, port.lat) {
+                        addNumberProperty("idx", index)
+                        addStringProperty("name", port.name)
+                        addStringProperty("type", port.type)
+                    }
+                },
+                maritime.chokepoints.mapIndexed { index, choke ->
+                    feature(choke.lng, choke.lat) {
+                        addNumberProperty("idx", index)
+                        addStringProperty("name", choke.name)
+                        addStringProperty("risk", choke.risk)
+                    }
+                },
+                maritime.ships.mapIndexed { index, ship ->
+                    feature(ship.lng, ship.lat) {
+                        addNumberProperty("idx", index)
+                        ship.name?.let { addStringProperty("name", it) }
+                        ship.type?.let { addStringProperty("type", it) }
+                        ship.heading?.let { addNumberProperty("heading", it) }
+                    }
+                },
+            )
         }
+
         updateSource("ports-source", portFeatures)
         ensureSymbolLayer(
             layerId = "ports-layer",
@@ -245,13 +293,6 @@ class LayersController(private val style: Style, private val context: Context) {
             iconSize = PropertyFactory.iconSize(0.55f),
         )
 
-        val chokepointFeatures = maritime.chokepoints.mapIndexed { index, choke ->
-            feature(choke.lng, choke.lat) {
-                addNumberProperty("idx", index)
-                addStringProperty("name", choke.name)
-                addStringProperty("risk", choke.risk)
-            }
-        }
         updateSource("chokepoints-source", chokepointFeatures)
         ensureCircleLayer(
             layerId = "chokepoints-layer",
@@ -270,16 +311,6 @@ class LayersController(private val style: Style, private val context: Context) {
             radius = PropertyFactory.circleRadius(9f),
         )
 
-        ensureImage("ship-icon", R.drawable.ic_boat, SHIP_COLOR)
-
-        val shipFeatures = maritime.ships.mapIndexed { index, ship ->
-            feature(ship.lng, ship.lat) {
-                addNumberProperty("idx", index)
-                ship.name?.let { addStringProperty("name", it) }
-                ship.type?.let { addStringProperty("type", it) }
-                ship.heading?.let { addNumberProperty("heading", it) }
-            }
-        }
         updateSource("ships-source", shipFeatures)
         ensureSymbolLayer(
             layerId = "ships-layer",
@@ -290,7 +321,9 @@ class LayersController(private val style: Style, private val context: Context) {
         )
     }
 
-    fun setSatellites(satellites: List<Satellite>) {
+    // Called on every satellite re-propagation tick (250ms — see startSatellitesAnimation); same
+    // reasoning as setFlights for why the feature-list construction moves off the UI thread.
+    suspend fun setSatellites(satellites: List<Satellite>) {
         ensureImage("sat-comms", R.drawable.ic_satellite, SAT_COMMS)
         ensureImage("sat-navigation", R.drawable.ic_satellite, SAT_NAVIGATION)
         ensureImage("sat-earth_obs", R.drawable.ic_satellite, SAT_EARTH_OBS)
@@ -298,12 +331,14 @@ class LayersController(private val style: Style, private val context: Context) {
         ensureImage("sat-science", R.drawable.ic_satellite, SAT_SCIENCE)
         ensureImage("sat-other", R.drawable.ic_satellite, SAT_OTHER)
 
-        val features = satellites.mapIndexed { index, sat ->
-            feature(sat.lng, sat.lat) {
-                addNumberProperty("idx", index)
-                addStringProperty("name", sat.name)
-                addStringProperty("category", sat.category ?: "other")
-                sat.mission?.let { addStringProperty("mission", it) }
+        val features = withContext(Dispatchers.Default) {
+            satellites.mapIndexed { index, sat ->
+                feature(sat.lng, sat.lat) {
+                    addNumberProperty("idx", index)
+                    addStringProperty("name", sat.name)
+                    addStringProperty("category", sat.category ?: "other")
+                    sat.mission?.let { addStringProperty("mission", it) }
+                }
             }
         }
         updateSource("satellites-source", features)
@@ -570,6 +605,44 @@ class LayersController(private val style: Style, private val context: Context) {
     private fun ensureImage(name: String, resId: Int, tint: Int) {
         if (!registeredImages.add(name)) return
         style.addImage(name, IconBitmaps.render(context, resId, tint))
+    }
+
+    /** Client-side relief shading from a public, keyless elevation dataset (AWS Terrain Tiles,
+     * Mapzen's old "Terrarium" PNG encoding — still mirrored and free years after Mapzen itself
+     * shut down) — no API key, no backend, just another raster-dem tile source alongside the
+     * existing Esri imagery/labels pattern. Gives the map real topographic depth (mountains,
+     * valleys, coastlines) rather than flat-colored land, especially once combined with camera
+     * tilt (see MapScreen's "Vue 3D" toggle) — a flat top-down view still shows the shading, just
+     * less dramatically, the same way a paper relief map reads even without tilting it.
+     *
+     * Inserted below "building": on the liberty style this lands it above roads/land polygons but
+     * below the buildings/building-3d extrusions and labels that should stay crisp on top of it.
+     * If a future style swap ever drops that layer id, addLayerBelow would throw — style.getLayer
+     * guards it so terrain just doesn't get added rather than crashing the whole style load. */
+    private fun ensureTerrain() {
+        val demSource = RasterDemSource(
+            "terrain-dem",
+            TileSet("2.1.0", "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png").apply {
+                encoding = "terrarium"
+            },
+            256,
+        )
+        style.addSource(demSource)
+        // hillshadeShadowColor/HighlightColor only take an Expression or String[] (per-light-source
+        // colors for the "multidirectional" method) — no plain @ColorInt overload, unlike
+        // hillshadeAccentColor just below. Expression.color(Int) is the same pattern already used
+        // for circleColor's severity stops above.
+        val hillshade = HillshadeLayer("hillshade-layer", "terrain-dem").withProperties(
+            PropertyFactory.hillshadeExaggeration(0.6f),
+            PropertyFactory.hillshadeShadowColor(Expression.color("#2a2a3a".toColorInt())),
+            PropertyFactory.hillshadeHighlightColor(Expression.color("#ffffff".toColorInt())),
+            PropertyFactory.hillshadeAccentColor("#4a4a5a".toColorInt()),
+        )
+        if (style.getLayer("building") != null) {
+            style.addLayerBelow(hillshade, "building")
+        } else {
+            style.addLayer(hillshade)
+        }
     }
 
     private fun ensureSymbolLayer(
