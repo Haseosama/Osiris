@@ -30,6 +30,19 @@ object DirectHttp {
     suspend inline fun <reified T> getJson(url: String, headers: Map<String, String> = emptyMap()): T =
         NetworkModule.json.decodeFromString(getText(url, headers))
 
+    /** Same shape as [getText] but for binary payloads (images) — used by
+     * [com.osiris.app.globe.EarthTextureLoader], nothing else needed raw bytes before it. */
+    suspend fun getBytes(url: String, headers: Map<String, String> = emptyMap()): ByteArray =
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder().url(url).apply {
+                headers.forEach { (k, v) -> header(k, v) }
+            }.build()
+            NetworkModule.okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) error("HTTP ${response.code}")
+                response.body?.bytes() ?: error("Empty response body")
+            }
+        }
+
     /** POST with a raw JSON string body, returning the raw response text — used for JSON-RPC
      * calls (Solana) and form-less JSON APIs that need a body Retrofit isn't wired up for here. */
     suspend fun postJson(url: String, jsonBody: String, headers: Map<String, String> = emptyMap()): String =

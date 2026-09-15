@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled._3dRotation
@@ -172,7 +173,12 @@ private val SATELLITE_CATEGORIES = listOf(
 private data class MapSearchResult(val label: String, val subtitle: String?, val lat: Double, val lng: Double, val onSelect: () -> Unit)
 
 @Composable
-fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: MapViewModel = viewModel()) {
+fun MapScreen(
+    onOpenSettings: () -> Unit,
+    onOpenRecon: () -> Unit,
+    onOpenGlobe: () -> Unit,
+    viewModel: MapViewModel = viewModel(),
+) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -806,6 +812,11 @@ fun MapScreen(onOpenSettings: () -> Unit, onOpenRecon: () -> Unit, viewModel: Ma
                         contentDescription = if (is3DEnabled) "Vue 2D" else "Vue 3D",
                         active = is3DEnabled,
                         onClick = { is3DEnabled = !is3DEnabled },
+                    )
+                    HudIconButton(
+                        icon = Icons.Filled.Public,
+                        contentDescription = "Globe 3D",
+                        onClick = onOpenGlobe,
                     )
                     HudIconButton(
                         icon = Icons.Filled.CenterFocusStrong,
