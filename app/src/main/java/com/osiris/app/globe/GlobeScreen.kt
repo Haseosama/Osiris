@@ -1,7 +1,6 @@
 package com.osiris.app.globe
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -61,9 +60,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
-import com.google.android.gms.tasks.CancellationTokenSource
 import com.osiris.app.map.CctvViewerDialog
 import com.osiris.app.map.EntityColors
 import com.osiris.app.map.EntityInfoDialog
@@ -75,6 +71,9 @@ import com.osiris.app.map.SATELLITE_CATEGORIES
 import com.osiris.app.map.toInfoDialog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.sin
 
 /** One result row in the globe's own search overlay — mirrors [com.osiris.app.map.MapScreen]'s
  * private `MapSearchResult`, kept as a separate small copy rather than shared: the map's version
@@ -92,6 +91,12 @@ private val SHIPS_COLOR = floatArrayOf(0.2f, 0.75f, 1f, 1f)
 private val SATELLITES_COLOR = floatArrayOf(0.65f, 0.35f, 1f, 1f)
 private val CYBER_ATTACKS_COLOR = floatArrayOf(1f, 0.1f, 0.6f, 1f)
 private val TRAFFIC_COLOR = floatArrayOf(1f, 0.6f, 0.3f, 1f)
+
+/** The device's own position — the globe's equivalent of the flat map's blue dot (MapScreen's
+ * LocationComponent). Pure white and roughly twice the size of a layer dot: nothing else on the
+ * globe is either, so it stays findable even sitting in the middle of a few thousand flights. */
+private val MY_LOCATION_COLOR = floatArrayOf(1f, 1f, 1f, 1f)
+private const val MY_LOCATION_POINT_SIZE = 22f
 
 /**
  * A standalone rotatable/zoomable 3D Earth (OpenGL ES, see [GlobeRenderer]) — MapLibre Native (the
@@ -131,6 +136,7 @@ fun GlobeScreen(
     var isLoadingTexture by remember { mutableStateOf(true) }
     var searchActive by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    var myLocation by remember { mutableStateOf<Pair<Double, Double>?>(null) }
 
     val layerToggles by viewModel.layerToggles.collectAsStateWithLifecycle()
     val layerErrors by viewModel.layerErrors.collectAsStateWithLifecycle()
@@ -234,6 +240,18 @@ fun GlobeScreen(
         val bitmap = EarthTextureLoader.load(context)
         if (bitmap != null) globeView.renderer.pendingBitmap = bitmap
         isLoadingTexture = false
+    }
+
+    // A single fix when the screen opens (and again on each location-button tap), not a continuous
+    // track like the flat map's LocationComponent — the marker is a "you are here" reference on a
+    // whole-Earth view, where even a few km of drift is far below one pixel.
+    LaunchedEffect(hasLocationPermission) {
+        if (hasLocationPermission) myLocation = viewModel.currentLocationOrNull()
+    }
+
+    LaunchedEffect(globeView, myLocation) {
+        val marker = myLocation?.let { listOf(it) }.orEmpty()
+        globeView.renderer.setPoints("my-location", marker, MY_LOCATION_COLOR, MY_LOCATION_POINT_SIZE)
     }
 
     // One effect per point-representable layer — same shape as MapScreen's own
@@ -411,7 +429,11 @@ fun GlobeScreen(
             FloatingActionButton(
                 onClick = {
                     if (hasLocationPermission) {
-                        locateAndCenterGlobe(context, globeView.renderer, coroutineScope)
+                        coroutineScope.launch {
+                            val location = viewModel.currentLocationOrNull() ?: return@launch
+                            myLocation = location
+                            flyGlobeTo(globeView.renderer, location.first, location.second)
+                        }
                     } else {
                         locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
                     }
@@ -430,12 +452,21 @@ fun GlobeScreen(
     }
 }
 
-/** How close [flyGlobeTo] zooms in by default — noticeably closer than the resting `zoom = 1f`
- * (see [GlobeRenderer.zoom]) so a location/search jump actually reads as "zoom to this point," not
- * just a rotation, while staying comfortably above [ZOOM_TO_FLAT_MAP_THRESHOLD] (0.62f) so landing
- * here never itself triggers the globe-to-flat-map handoff — that stays a deliberate pinch gesture,
- * not a side effect of tapping a search result or the location button. */
-private const val FLY_TO_ZOOM = 0.75f
+/** Where [flyGlobeTo] ends up, as a multiple of the "whole globe in view" distance (see
+ * [GlobeRenderer.zoom]): close enough that the destination fills the screen at roughly
+ * continent scale rather than the barely-moved, still-almost-whole-hemisphere view a gentler
+ * value gives — but not so close that the single 2048px-wide Earth texture (see
+ * [EarthTextureLoader]) turns to mush. Stays above [ZOOM_TO_FLAT_MAP_THRESHOLD] so arriving
+ * somewhere still leaves room to pinch in a little before the flat map takes over. */
+internal const val FLY_TO_ZOOM = 0.42f
+
+/** ~670ms at 60fps. */
+private const val FLY_STEPS = 42
+private const val FLY_FRAME_MS = 16L
+
+/** How far [flyGlobeTo] pulls back mid-flight, at most (added to [GlobeRenderer.zoom], so bigger =
+ * further away). Scaled down for short hops — see [flyGlobeTo]. */
+private const val FLY_ARC_MAX_PULLBACK = 0.5f
 
 /** Smoothly rotates and zooms [renderer] so [GlobeRenderer.centerLatLng] ends up at ([targetLat],
  * [targetLng]), used by both the location FAB and search-result selection. Plain per-frame field
@@ -454,30 +485,28 @@ private suspend fun flyGlobeTo(renderer: GlobeRenderer, targetLat: Double, targe
     if (deltaY < -180f) deltaY += 360f
     val deltaX = targetX - startX
     val deltaZoom = targetZoom - startZoom
-    val steps = 24
-    repeat(steps) { i ->
-        val t = (i + 1) / steps.toFloat()
-        renderer.rotationX = startX + deltaX * t
-        renderer.rotationY = startY + deltaY * t
-        renderer.zoom = startZoom + deltaZoom * t
-        delay(16L)
+    // How much of the planet this flight crosses, 0..1: a jump to the far side gets the full
+    // pull-back, a nudge a few degrees away gets almost none.
+    val travel = ((abs(deltaX) + abs(deltaY)) / 180f).coerceIn(0f, 1f)
+    val pullback = FLY_ARC_MAX_PULLBACK * travel
+
+    repeat(FLY_STEPS) { i ->
+        val t = (i + 1) / FLY_STEPS.toFloat()
+        // Smoothstep — eases in and out instead of the hard start/stop of a linear tween.
+        val eased = t * t * (3f - 2f * t)
+        renderer.rotationX = startX + deltaX * eased
+        renderer.rotationY = startY + deltaY * eased
+        // Pull back while crossing, then dive in, the way Google Earth flies between places —
+        // spinning the surface past the camera at close range is disorienting and, at this
+        // texture's resolution, just a blur. sin(pi*t) is zero at both ends, so it only bends the
+        // middle of the flight and leaves the start and destination exactly where they should be.
+        renderer.zoom = startZoom + deltaZoom * eased + pullback * sin(PI.toFloat() * t)
+        delay(FLY_FRAME_MS)
     }
+
+    // Land exactly on target rather than wherever the accumulated float steps got to.
+    renderer.rotationX = targetX
+    renderer.rotationY = targetY
+    renderer.zoom = targetZoom
 }
 
-/** Same cached-fix-first, fresh-request-fallback shape as MapScreen's own
- * `centerOnUserLocation`, just flying the globe's rotation to the result (see [flyGlobeTo])
- * instead of easing a MapLibre camera. */
-@SuppressLint("MissingPermission")
-private fun locateAndCenterGlobe(context: android.content.Context, renderer: GlobeRenderer, scope: kotlinx.coroutines.CoroutineScope) {
-    val client = LocationServices.getFusedLocationProviderClient(context)
-    client.lastLocation.addOnSuccessListener { location ->
-        if (location != null) {
-            scope.launch { flyGlobeTo(renderer, location.latitude, location.longitude) }
-        } else {
-            client.getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, CancellationTokenSource().token)
-                .addOnSuccessListener { fresh ->
-                    if (fresh != null) scope.launch { flyGlobeTo(renderer, fresh.latitude, fresh.longitude) }
-                }
-        }
-    }
-}

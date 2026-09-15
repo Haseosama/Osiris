@@ -9,8 +9,18 @@ import android.view.ScaleGestureDetector
  * hands off to the flat map instead of continuing to zoom the sphere — a custom OpenGL globe has
  * no street-level detail to zoom into (it's one whole-Earth texture, see [EarthTextureLoader]), so
  * "zoom in past a point" reads much more naturally as "switch to the real map" than as the globe
- * just getting a blurrier and blurrier close-up of the same low-res image. */
-const val ZOOM_TO_FLAT_MAP_THRESHOLD = 0.62f
+ * just getting a blurrier and blurrier close-up of the same low-res image. Kept below
+ * [com.osiris.app.globe.FLY_TO_ZOOM] (where the location button and search results land) so that
+ * arriving at a place still leaves room to pinch in a little on the globe itself before the flat
+ * map takes over. */
+const val ZOOM_TO_FLAT_MAP_THRESHOLD = 0.32f
+
+/** Pinch limits. The floor is just shy of [ZOOM_TO_FLAT_MAP_THRESHOLD]: crossing the threshold
+ * hands off, so the globe is never left sitting closer than this — and the camera-distance clamp
+ * in [GlobeRenderer.onDrawFrame] guarantees even this floor can't push the near plane into the
+ * sphere on any screen shape. */
+private const val MIN_ZOOM = 0.3f
+private const val MAX_ZOOM = 3f
 
 
 /**
@@ -38,8 +48,12 @@ class GlobeSurfaceView(context: Context) : GLSurfaceView(context) {
         context,
         object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
-                renderer.zoom = (renderer.zoom / detector.scaleFactor).coerceIn(0.5f, 3f)
-                if (!hasHandedOff && renderer.zoom <= ZOOM_TO_FLAT_MAP_THRESHOLD) {
+                renderer.zoom = (renderer.zoom / detector.scaleFactor).coerceIn(MIN_ZOOM, MAX_ZOOM)
+                // scaleFactor > 1 is fingers moving apart, i.e. zooming IN (zoom divides by it, and
+                // smaller zoom = closer). Without this check, merely being below the threshold —
+                // which the location/search fly-to now deliberately leaves the globe at — would make
+                // ANY pinch, including one zooming back OUT, teleport the user to the flat map.
+                if (!hasHandedOff && detector.scaleFactor > 1f && renderer.zoom <= ZOOM_TO_FLAT_MAP_THRESHOLD) {
                     hasHandedOff = true
                     val (lat, lng) = renderer.centerLatLng()
                     onZoomedIn?.invoke(lat, lng)

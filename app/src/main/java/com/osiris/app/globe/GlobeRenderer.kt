@@ -57,10 +57,11 @@ private const val FRAGMENT_SHADER = """
 // hemisphere check.
 private const val POINT_VERTEX_SHADER = """
     uniform mat4 uMVPMatrix;
+    uniform float uPointSize;
     attribute vec4 aPosition;
     void main() {
         gl_Position = uMVPMatrix * aPosition;
-        gl_PointSize = 10.0;
+        gl_PointSize = uPointSize;
     }
 """
 
@@ -108,7 +109,7 @@ class GlobeRenderer : GLSurfaceView.Renderer {
      * ConcurrentModificationException the moment those overlap. */
     private val pointSets = java.util.concurrent.ConcurrentHashMap<String, PointSet>()
 
-    private class PointSet(val buffer: FloatBuffer, val count: Int, val color: FloatArray)
+    private class PointSet(val buffer: FloatBuffer, val count: Int, val color: FloatArray, val size: Float)
 
     private lateinit var mesh: SphereMesh
     private var program = 0
@@ -126,6 +127,7 @@ class GlobeRenderer : GLSurfaceView.Renderer {
     private var aPointPositionLoc = 0
     private var uPointMvpMatrixLoc = 0
     private var uPointColorLoc = 0
+    private var uPointSizeLoc = 0
 
     /** Camera distance that frames the whole globe on THIS screen's aspect ratio — recomputed in
      * [onSurfaceChanged] (rotation, split screen), multiplied by [zoom] in [onDrawFrame]. Only ever
@@ -165,6 +167,7 @@ class GlobeRenderer : GLSurfaceView.Renderer {
         aPointPositionLoc = GLES20.glGetAttribLocation(pointProgram, "aPosition")
         uPointMvpMatrixLoc = GLES20.glGetUniformLocation(pointProgram, "uMVPMatrix")
         uPointColorLoc = GLES20.glGetUniformLocation(pointProgram, "uColor")
+        uPointSizeLoc = GLES20.glGetUniformLocation(pointProgram, "uPointSize")
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
@@ -263,6 +266,7 @@ class GlobeRenderer : GLSurfaceView.Renderer {
             set.buffer.position(0)
             GLES20.glVertexAttribPointer(aPointPositionLoc, 3, GLES20.GL_FLOAT, false, 0, set.buffer)
             GLES20.glUniform4fv(uPointColorLoc, 1, set.color, 0)
+            GLES20.glUniform1f(uPointSizeLoc, set.size)
             GLES20.glDrawArrays(GLES20.GL_POINTS, 0, set.count)
         }
         GLES20.glDisableVertexAttribArray(aPointPositionLoc)
@@ -272,8 +276,10 @@ class GlobeRenderer : GLSurfaceView.Renderer {
      * effects, off the GL thread (safe: this only builds a plain direct FloatBuffer, no GL calls
      * happen until [drawPoints] reads it back on the next [onDrawFrame]). An empty [latLngs]
      * removes the layer's dots entirely (e.g. the user toggled that layer off) rather than leaving
-     * a stale zero-length entry behind. */
-    fun setPoints(key: String, latLngs: List<Pair<Double, Double>>, color: FloatArray) {
+     * a stale zero-length entry behind. [pointSize] is in pixels, per set — the one-off "you are
+     * here" marker uses a bigger one than the layer clouds so it reads as a marker rather than as
+     * one more anonymous dot among thousands. */
+    fun setPoints(key: String, latLngs: List<Pair<Double, Double>>, color: FloatArray, pointSize: Float = DEFAULT_POINT_SIZE) {
         if (latLngs.isEmpty()) {
             pointSets.remove(key)
             return
@@ -288,7 +294,7 @@ class GlobeRenderer : GLSurfaceView.Renderer {
         val buffer = ByteBuffer.allocateDirect(floats.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
         buffer.put(floats)
         buffer.position(0)
-        pointSets[key] = PointSet(buffer, latLngs.size, color)
+        pointSets[key] = PointSet(buffer, latLngs.size, color, pointSize)
     }
 
     /** Forward version of [centerLatLng]'s inverse trig — must stay the mirror image of it (and
@@ -400,6 +406,7 @@ class GlobeRenderer : GLSurfaceView.Renderer {
 
     private companion object {
         const val POINT_RADIUS = 1.02f
+        const val DEFAULT_POINT_SIZE = 10f
 
         const val FOV_Y_DEGREES = 45f
 

@@ -250,9 +250,13 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
      * fresh-request-fallback shape as MapScreen's centerOnUserLocation, just wrapped as a suspend
      * function since PassPredictor needs the result before it can even start. Never throws: no
      * permission, no location provider, or genuinely no fix available (indoors, GPS off) all just
-     * mean "can't compute a pass right now" — the dialog shows "aucun trouvé" either way. */
+     * mean "can't compute a pass right now" — the dialog shows "aucun trouvé" either way.
+     *
+     * Internal rather than private: [com.osiris.app.globe.GlobeScreen] needs exactly this (its own
+     * location marker and its fly-to-my-position button) and reusing it beats a second copy of the
+     * same fused-location callback dance. */
     @SuppressLint("MissingPermission")
-    private suspend fun currentLocationOrNull(): Pair<Double, Double>? {
+    internal suspend fun currentLocationOrNull(): Pair<Double, Double>? {
         val context = getApplication<Application>()
         val hasPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
