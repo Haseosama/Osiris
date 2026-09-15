@@ -11,9 +11,12 @@ import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 import android.opengl.GLSurfaceView
 import kotlin.math.acos
+import kotlin.math.atan
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.min
 import kotlin.math.sin
+import kotlin.math.tan
 
 private const val VERTEX_SHADER = """
     uniform mat4 uMVPMatrix;
@@ -86,6 +89,11 @@ class GlobeRenderer : GLSurfaceView.Renderer {
 
     @Volatile var rotationX = 0f
     @Volatile var rotationY = 0f
+
+    /** Multiplier on the camera distance that frames the whole globe on this screen (see
+     * [onSurfaceChanged]), so SMALLER is closer and 1 always means "whole globe in view" whatever
+     * the screen's shape. Clamped by its writers ([GlobeSurfaceView]'s pinch handling and
+     * [GlobeScreen]'s fly-to animation), and clamped again in absolute terms in [onDrawFrame]. */
     @Volatile var zoom = 1f
 
     /** Set from outside (see [GlobeScreen]) once [EarthTextureLoader] finishes; consumed and
@@ -118,6 +126,13 @@ class GlobeRenderer : GLSurfaceView.Renderer {
     private var aPointPositionLoc = 0
     private var uPointMvpMatrixLoc = 0
     private var uPointColorLoc = 0
+
+    /** Camera distance that frames the whole globe on THIS screen's aspect ratio — recomputed in
+     * [onSurfaceChanged] (rotation, split screen), multiplied by [zoom] in [onDrawFrame]. Only ever
+     * touched on the GL thread, so unlike [rotationX]/[zoom] it needs no `@Volatile`. The initial
+     * value is only what the very first frame would use if it somehow drew before the first
+     * onSurfaceChanged. */
+    private var fitDistance = 3f
 
     private val projectionMatrix = FloatArray(16)
     private val viewMatrix = FloatArray(16)
@@ -155,7 +170,19 @@ class GlobeRenderer : GLSurfaceView.Renderer {
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
         GLES20.glViewport(0, 0, width, height)
         val aspect = width.toFloat() / height.toFloat().coerceAtLeast(1f)
-        Matrix.perspectiveM(projectionMatrix, 0, 45f, aspect, 1f, 10f)
+        Matrix.perspectiveM(projectionMatrix, 0, FOV_Y_DEGREES, aspect, NEAR_PLANE, FAR_PLANE)
+
+        // The globe has to fit the NARROWER screen axis, which on a portrait phone is the
+        // horizontal one: perspectiveM's field of view is the VERTICAL one, and the horizontal
+        // shrinks with the aspect ratio (~11° half-angle at 1080x2400 versus 22.5° vertically).
+        // A single hardcoded camera distance framed for a square/landscape viewport therefore
+        // leaves the sphere badly cropped left and right in portrait — filling the screen with one
+        // curved slab of surface rather than reading as a globe at all.
+        val halfFovY = Math.toRadians(FOV_Y_DEGREES / 2.0)
+        val halfFovX = atan(aspect * tan(halfFovY))
+        // radius / sin(halfFov) is exactly the distance that puts the unit sphere's silhouette on
+        // the frustum edge; the margin backs off a little so it doesn't touch the screen edges.
+        fitDistance = (SPHERE_FIT_MARGIN / sin(min(halfFovX, halfFovY))).toFloat()
     }
 
     override fun onDrawFrame(gl: GL10?) {
@@ -167,7 +194,13 @@ class GlobeRenderer : GLSurfaceView.Renderer {
 
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
 
-        val distance = (2.6f * zoom).coerceIn(1.4f, 6f)
+        // [zoom] is a multiplier on the aspect-fitted framing distance (see onSurfaceChanged), so
+        // zoom = 1 always means "whole globe visible" whatever the screen shape. The lower clamp
+        // keeps the camera far enough out that the sphere's near face never crosses [NEAR_PLANE]:
+        // that clips the cap facing the camera away, and with back faces culled there's nothing
+        // behind it to draw — the screen just goes black, which is exactly what a zoom-to-location
+        // used to do before NEAR_PLANE was brought in close enough for this range.
+        val distance = (fitDistance * zoom).coerceIn(MIN_CAMERA_DISTANCE, MAX_CAMERA_DISTANCE)
         Matrix.setLookAtM(viewMatrix, 0, 0f, 0f, distance, 0f, 0f, 0f, 0f, 1f, 0f)
 
         Matrix.setIdentityM(modelMatrix, 0)
@@ -367,5 +400,22 @@ class GlobeRenderer : GLSurfaceView.Renderer {
 
     private companion object {
         const val POINT_RADIUS = 1.02f
+
+        const val FOV_Y_DEGREES = 45f
+
+        /** Well inside the closest the camera is ever allowed to get ([MIN_CAMERA_DISTANCE] minus
+         * the sphere's own radius of 1), so no zoom level can clip into the globe — while staying
+         * large enough to keep depth-buffer precision comfortable for the entity dots, which sit
+         * only 2% of a radius proud of the surface ([POINT_RADIUS]). */
+        const val NEAR_PLANE = 0.5f
+        const val FAR_PLANE = 50f
+
+        /** Sphere radius (1) + [NEAR_PLANE], plus a little slack. */
+        const val MIN_CAMERA_DISTANCE = 1.8f
+        const val MAX_CAMERA_DISTANCE = 40f
+
+        /** How much room to leave around the globe at the resting zoom of 1 — 1.0 would put its
+         * silhouette exactly on the screen edge. */
+        const val SPHERE_FIT_MARGIN = 1.15
     }
 }
