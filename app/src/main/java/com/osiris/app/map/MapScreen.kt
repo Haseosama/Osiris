@@ -177,6 +177,11 @@ fun MapScreen(
     onOpenSettings: () -> Unit,
     onOpenRecon: () -> Unit,
     onOpenGlobe: () -> Unit,
+    // Set when returning from the globe screen after a pinch-zoom-in there (see
+    // OsirisNavGraph/GlobeScreen) — jump the camera to this point once, then report it consumed
+    // so the nav graph clears it and a later unrelated recomposition doesn't jump again.
+    pendingCameraJump: Pair<Double, Double>? = null,
+    onPendingCameraJumpConsumed: () -> Unit = {},
     viewModel: MapViewModel = viewModel(),
 ) {
     val context = LocalContext.current
@@ -471,6 +476,17 @@ fun MapScreen(
         if (map != null && hasLocationPermission && hasCheckedForSavedView && savedViewOnLaunch == null) {
             centerOnUserLocation(context, map)
         }
+    }
+
+    // Returning from the globe screen after a pinch-zoom-in there — see MapScreen's own
+    // pendingCameraJump doc and OsirisNavGraph. City-level zoom (10) rather than the globe's
+    // own coarse whole-Earth view: the whole point of handing off was to get street/city detail
+    // the globe's single low-res texture can't provide.
+    LaunchedEffect(maplibreMap, pendingCameraJump) {
+        val map = maplibreMap ?: return@LaunchedEffect
+        val (lat, lng) = pendingCameraJump ?: return@LaunchedEffect
+        map.easeCamera(CameraUpdateFactory.newLatLngZoom(LatLng(lat, lng), 10.0), 800)
+        onPendingCameraJumpConsumed()
     }
 
     // A persistent "blue dot" marker for the device's own position — distinct from the

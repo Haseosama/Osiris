@@ -29,23 +29,35 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.osiris.app.data.repository.FlightsRepository
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
 /**
  * A standalone rotatable/zoomable 3D Earth (OpenGL ES, see [GlobeRenderer]) — MapLibre Native (the
  * engine behind [com.osiris.app.map.MapScreen]) has no globe/sphere projection at all, only flat
  * Mercator (confirmed by reading its source directly: the one "ProjectionMode" it has is for
  * axonometric/isometric rendering, unrelated). This is a separate screen rather than a mode the
- * main map switches into for exactly that reason — it isn't the same map engine underneath, so it
- * doesn't carry any of MapScreen's live layers (flights, ships, ...) over. Just the sphere itself
- * for now.
+ * main map switches into for exactly that reason — it isn't the same map engine underneath, so a
+ * pinch-zoom in past [ZOOM_TO_FLAT_MAP_THRESHOLD] hands off to [onZoomedToFlatMap] instead of the
+ * globe trying (and failing — it's one whole-Earth texture, nothing to zoom into) to get any more
+ * detailed. Flights are drawn as small billboarded dots, refreshed periodically straight from
+ * [FlightsRepository] — a single snapshot polled every [FLIGHT_POLL_INTERVAL_MS], not the main
+ * map's live dead-reckoned animation, since wiring this completely different renderer into that
+ * animation loop is a much bigger undertaking than a globe overview screen calls for.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GlobeScreen(onBack: () -> Unit) {
+fun GlobeScreen(onBack: () -> Unit, onZoomedToFlatMap: (lat: Double, lng: Double) -> Unit) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val globeView = remember { GlobeSurfaceView(context) }
     var isLoadingTexture by remember { mutableStateOf(true) }
+
+    DisposableEffect(globeView, onZoomedToFlatMap) {
+        globeView.onZoomedIn = onZoomedToFlatMap
+        onDispose { globeView.onZoomedIn = null }
+    }
 
     DisposableEffect(lifecycleOwner, globeView) {
         val observer = LifecycleEventObserver { _, event ->
@@ -71,6 +83,15 @@ fun GlobeScreen(onBack: () -> Unit) {
         isLoadingTexture = false
     }
 
+    LaunchedEffect(Unit) {
+        val repository = FlightsRepository()
+        while (isActive) {
+            val markers = runCatching { repository.fetch("") }.getOrNull().orEmpty()
+            globeView.renderer.setFlightPositions(markers.map { it.flight.lat to it.flight.lng })
+            delay(FLIGHT_POLL_INTERVAL_MS)
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -94,3 +115,5 @@ fun GlobeScreen(onBack: () -> Unit) {
         }
     }
 }
+
+private const val FLIGHT_POLL_INTERVAL_MS = 60_000L
