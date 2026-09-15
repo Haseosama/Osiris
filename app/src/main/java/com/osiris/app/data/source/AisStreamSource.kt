@@ -68,6 +68,16 @@ object AisStreamSource {
         var name: String? = null,
         var destination: String? = null,
         var type: String? = null,
+        var navStatus: Int? = null,
+        var callSign: String? = null,
+        var imo: Long? = null,
+        var lengthM: Double? = null,
+        var widthM: Double? = null,
+        var draughtM: Double? = null,
+        var etaMonth: Int? = null,
+        var etaDay: Int? = null,
+        var etaHour: Int? = null,
+        var etaMinute: Int? = null,
         var timestamp: Long = System.currentTimeMillis(),
     )
 
@@ -193,6 +203,7 @@ object AisStreamSource {
         val Sog: Double? = null,
         val TrueHeading: Double? = null,
         val Cog: Double? = null,
+        val NavigationalStatus: Int? = null,
     )
 
     @Serializable
@@ -200,7 +211,22 @@ object AisStreamSource {
         val Name: String? = null,
         val Destination: String? = null,
         val Type: Int? = null,
+        val CallSign: String? = null,
+        val ImoNumber: Long? = null,
+        val Dimension: AisDimension? = null,
+        val MaximumStaticDraught: Double? = null,
+        val Eta: AisEta? = null,
     )
+
+    /** Bow/stern/port/starboard distances from the AIS antenna, in metres — A+B is overall
+     * length, C+D is overall beam (width). */
+    @Serializable
+    private data class AisDimension(val A: Int? = null, val B: Int? = null, val C: Int? = null, val D: Int? = null)
+
+    /** No year field in raw AIS — vessels only ever report month/day/hour/minute, implicitly
+     * "the next time this date/time comes around". Month=0 or Day=0 both mean "not available". */
+    @Serializable
+    private data class AisEta(val Month: Int? = null, val Day: Int? = null, val Hour: Int? = null, val Minute: Int? = null)
 
     private fun osirisShipType(typeCode: Int?): String = when {
         typeCode == null -> "cargo"
@@ -208,6 +234,95 @@ object AisStreamSource {
         typeCode in 70..79 -> "cargo"
         typeCode == 35 -> "military"
         else -> "cargo"
+    }
+
+    /** ITU-R M.1371 Table 45 — the standard AIS navigational status codes, verbatim (0-15 are
+     * all defined; anything else would be a malformed message). Explains a lot of "why isn't this
+     * ship moving": 1/5/6 are anchored/moored/aground, not a tracking bug. */
+    fun navStatusLabel(status: Int?): String? = when (status) {
+        0 -> "En route (moteur)"
+        1 -> "À l'ancre"
+        2 -> "Sous contrôle"
+        3 -> "Manœuvrabilité restreinte"
+        4 -> "Gêné par son tirant d'eau"
+        5 -> "Amarré"
+        6 -> "Échoué"
+        7 -> "En pêche"
+        8 -> "En route (voile)"
+        9 -> "Engin à grande vitesse"
+        10 -> "Engin à effet de surface"
+        11 -> "En remorque (arrière)"
+        12 -> "En poussage/remorque (côté)"
+        14 -> "Alerte AIS-SART/MOB/EPIRB"
+        else -> null
+    }
+
+    /** No year in raw AIS ETA — this just formats month/day/hour/minute as given. Per spec,
+     * Month=0 or Day=0 both mean "not available" (and Hour=24/Minute=60 are the same for those
+     * fields specifically, though aisstream.io tends to omit the field entirely instead). */
+    fun formatEta(month: Int?, day: Int?, hour: Int?, minute: Int?): String? {
+        if (month == null || day == null || month == 0 || day == 0) return null
+        val h = hour?.takeIf { it in 0..23 } ?: return "%02d/%02d".format(day, month)
+        val m = minute?.takeIf { it in 0..59 } ?: 0
+        return "%02d/%02d %02d:%02d".format(day, month, h, m)
+    }
+
+    /** First 3 digits of the MMSI are the ITU Maritime Identification Digits — the vessel's flag
+     * state, assigned per country regardless of where it actually sails. Not exhaustive (the real
+     * MID table has ~200 entries across every UN member) — covers the major flag registries and
+     * the biggest maritime nations, which is the large majority of what actually shows up on a
+     * live AIS feed; an unlisted MID just shows no flag rather than a wrong one. */
+    fun mmsiFlagCountry(mmsi: Long?): String? {
+        val mid = mmsi?.toString()?.takeIf { it.length == 9 }?.take(3)?.toIntOrNull() ?: return null
+        return MID_TABLE[mid]
+    }
+
+    private val MID_TABLE: Map<Int, String> = buildMap {
+        // Open/flag-of-convenience registries — a large share of world tonnage.
+        for (m in 351..357) put(m, "Panama")
+        for (m in 636..637) put(m, "Liberia")
+        put(538, "Îles Marshall")
+        put(477, "Hong Kong")
+        for (m in 563..566) put(m, "Singapour")
+        put(215, "Malte")
+        put(229, "Malte")
+        for (m in 248..249) put(m, "Malte")
+        for (m in 308..311) put(m, "Bahamas")
+        put(319, "Îles Caïmans")
+        put(667, "Saint-Vincent-et-les-Grenadines")
+        put(548, "Îles Cook")
+        // Major shipbuilding/trading/naval nations.
+        for (m in 412..414) put(m, "Chine")
+        for (m in 431..432) put(m, "Japon")
+        for (m in 440..441) put(m, "Corée du Sud")
+        put(416, "Taïwan")
+        put(232, "Royaume-Uni")
+        put(233, "Royaume-Uni")
+        put(235, "Royaume-Uni")
+        for (m in 366..369) put(m, "États-Unis")
+        put(303, "États-Unis")
+        for (m in 244..245) put(m, "Pays-Bas")
+        put(211, "Allemagne")
+        put(218, "Allemagne")
+        for (m in 226..228) put(m, "France")
+        put(247, "Italie")
+        put(212, "Chypre")
+        put(209, "Chypre")
+        put(250, "Irlande")
+        for (m in 219..220) put(m, "Danemark")
+        for (m in 257..259) put(m, "Norvège")
+        for (m in 265..266) put(m, "Suède")
+        put(230, "Finlande")
+        put(273, "Russie")
+        put(533, "Malaisie")
+        put(574, "Vietnam")
+        put(577, "Philippines")
+        put(419, "Inde")
+        put(525, "Indonésie")
+        put(503, "Australie")
+        put(512, "Nouvelle-Zélande")
+        put(725, "Chili")
+        put(710, "Brésil")
     }
 
     private fun handleMessage(text: String) {
@@ -231,12 +346,28 @@ object AisStreamSource {
                 // in whatever direction 511°/360° happens to reduce to mod 360.
                 existing.heading = report.TrueHeading?.takeIf { it in 0.0..359.0 }
                     ?: report.Cog?.takeIf { it in 0.0..359.9 }
+                existing.navStatus = report.NavigationalStatus
                 existing.timestamp = System.currentTimeMillis()
             }
             "ShipStaticData" -> parsed.Message?.ShipStaticData?.let { data ->
                 data.Name?.trim()?.takeIf { it.isNotEmpty() }?.let { existing.name = it }
                 data.Destination?.trim()?.takeIf { it.isNotEmpty() }?.let { existing.destination = it }
                 existing.type = osirisShipType(data.Type)
+                // "@" is AIS's own space-padding character for unset text fields — a callsign of
+                // all-"@" means "not available", not a literal callsign.
+                data.CallSign?.trim()?.trim('@')?.takeIf { it.isNotEmpty() }?.let { existing.callSign = it }
+                data.ImoNumber?.takeIf { it > 0 }?.let { existing.imo = it }
+                data.Dimension?.let { dim ->
+                    if (dim.A != null && dim.B != null) existing.lengthM = (dim.A + dim.B).toDouble()
+                    if (dim.C != null && dim.D != null) existing.widthM = (dim.C + dim.D).toDouble()
+                }
+                data.MaximumStaticDraught?.takeIf { it > 0 }?.let { existing.draughtM = it }
+                data.Eta?.let { eta ->
+                    existing.etaMonth = eta.Month
+                    existing.etaDay = eta.Day
+                    existing.etaHour = eta.Hour
+                    existing.etaMinute = eta.Minute
+                }
             }
             else -> {}
         }
@@ -389,7 +520,13 @@ object AisStreamSource {
         val shipDtos = ships.mapNotNull { s ->
             val lat = s.lat ?: return@mapNotNull null
             val lng = s.lng ?: return@mapNotNull null
-            Ship(id = s.mmsi, mmsi = s.mmsi, lat = lat, lng = lng, speed = s.speed, heading = s.heading, name = s.name, destination = s.destination, type = s.type)
+            Ship(
+                id = s.mmsi, mmsi = s.mmsi, lat = lat, lng = lng, speed = s.speed, heading = s.heading,
+                name = s.name, destination = s.destination, type = s.type,
+                navStatus = s.navStatus, callSign = s.callSign, imo = s.imo,
+                lengthM = s.lengthM, widthM = s.widthM, draughtM = s.draughtM,
+                etaText = formatEta(s.etaMonth, s.etaDay, s.etaHour, s.etaMinute),
+            )
         }
 
         MaritimeResponse(

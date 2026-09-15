@@ -15,6 +15,7 @@ import com.osiris.app.data.model.SatelliteNextPass
 import com.osiris.app.data.model.Ship
 import com.osiris.app.data.model.TrafficIncident
 import com.osiris.app.data.model.WeatherEvent
+import com.osiris.app.data.source.AisStreamSource
 import java.time.Instant
 
 data class InfoRow(val label: String, val value: String)
@@ -234,21 +235,39 @@ fun Chokepoint.toInfoDialog(): InfoDialogContent = InfoDialogContent(
     sections = oneSection(listOfNotNull(traffic?.let { InfoRow("Trafic", it) })),
 )
 
-fun Ship.toInfoDialog(): InfoDialogContent = InfoDialogContent(
-    title = name?.takeIf { it.isNotBlank() } ?: "Navire",
-    subtitle = type,
-    accentHex = EntityColors.SHIP,
-    sections = oneSection(
-        listOfNotNull(
-            mmsi?.let { InfoRow("MMSI", it.toString()) },
-            destination?.takeIf { it.isNotBlank() }?.let { InfoRow("Destination", it) },
-            speed?.let { InfoRow("Vitesse", "${it.toInt()} kt") },
-            heading?.let { InfoRow("Cap", "${it.toInt()}°") },
-        )
-    ),
-    externalUrl = mmsi?.let { "https://www.marinetraffic.com/en/ais/details/ships/mmsi:$it" },
-    externalUrlLabel = "MarineTraffic",
-)
+/** Most of these fields ([Ship.navStatus]/[Ship.callSign]/[Ship.imo]/dimensions/[Ship.etaText])
+ * come straight from the AIS stream — [com.osiris.app.data.source.AisStreamSource] already
+ * received them, they just weren't captured/shown before. [navStatusLabel] in particular answers
+ * "why isn't this moving" right in the dialog instead of leaving it a mystery: 1/5/6 (anchored/
+ * moored/aground) aren't a tracking bug, they're the ship's actual real-world state. */
+fun Ship.toInfoDialog(): InfoDialogContent {
+    val identity = listOfNotNull(
+        mmsi?.let { InfoRow("MMSI", it.toString()) },
+        AisStreamSource.mmsiFlagCountry(mmsi)?.let { InfoRow("Pavillon", it) },
+        callSign?.let { InfoRow("Indicatif", it) },
+        imo?.let { InfoRow("Numéro IMO", it.toString()) },
+        if (lengthM != null && widthM != null) InfoRow("Dimensions", "${lengthM.toInt()} × ${widthM.toInt()} m") else null,
+        draughtM?.let { InfoRow("Tirant d'eau", "%.1f m".format(it)) },
+    )
+    val position = listOfNotNull(
+        AisStreamSource.navStatusLabel(navStatus)?.let { InfoRow("Statut", it) },
+        destination?.takeIf { it.isNotBlank() }?.let { InfoRow("Destination", it) },
+        etaText?.let { InfoRow("ETA", it) },
+        speed?.let { InfoRow("Vitesse", "${it.toInt()} kt") },
+        heading?.let { InfoRow("Cap", "${it.toInt()}°") },
+    )
+    return InfoDialogContent(
+        title = name?.takeIf { it.isNotBlank() } ?: "Navire",
+        subtitle = type,
+        accentHex = EntityColors.SHIP,
+        sections = listOfNotNull(
+            InfoSection("Navire", identity).takeIf { identity.isNotEmpty() },
+            InfoSection("Position", position).takeIf { position.isNotEmpty() },
+        ),
+        externalUrl = mmsi?.let { "https://www.marinetraffic.com/en/ais/details/ships/mmsi:$it" },
+        externalUrlLabel = "MarineTraffic",
+    )
+}
 
 /** [periodMinutes] and [nextPass] are both fetched on demand after the dialog first opens (see
  * [com.osiris.app.map.MapViewModel.selectSatellite]) — the main poll only ever carries a bare
@@ -271,10 +290,16 @@ fun Satellite.toInfoDialog(
             rows = listOfNotNull(
                 noradId?.let { InfoRow("NORAD ID", it) },
                 category?.let { InfoRow("Catégorie", it) },
+                launchYear?.let { InfoRow("Lancement", it.toString()) },
                 alt?.let { InfoRow("Altitude", "${it.toInt()} km") },
                 alt?.let { InfoRow("Orbite", orbitClass(it)) },
                 periodMinutes?.let { InfoRow("Période orbitale", formatOrbitalPeriod(it)) } ?: InfoRow("Période orbitale", "…"),
                 if (alt != null && periodMinutes != null) InfoRow("Vitesse", "${"%.2f".format(orbitalSpeedKmS(alt, periodMinutes))} km/s") else null,
+                inclinationDeg?.let { InfoRow("Inclinaison", "%.1f°".format(it)) },
+                eccentricity?.let { InfoRow("Excentricité", "%.4f".format(it)) },
+                if (apogeeAltKm != null && perigeeAltKm != null) {
+                    InfoRow("Apogée / Périgée", "${apogeeAltKm.toInt()} / ${perigeeAltKm.toInt()} km")
+                } else null,
             ),
         ),
         InfoSection(

@@ -57,6 +57,12 @@ object CelesTrakSatelliteSource {
     private const val REFRESH_MIN_COUNT = 5000
     private const val REFRESH_STALE_MS = 3_600_000L
 
+    // Standard gravitational parameter of Earth (km³/s²) and mean radius (km, matching the value
+    // already used elsewhere for the orbital-speed estimate in InfoDialogContent) — both needed
+    // to turn a TLE's mean motion into apogee/perigee altitude via Kepler's third law.
+    private const val EARTH_MU_KM3_S2 = 398_600.4418
+    private const val EARTH_RADIUS_KM = 6_371.0
+
     private val fetchMutex = Mutex()
     @Volatile private var cachedTles: List<TleEntry> = emptyList()
     @Volatile private var cacheTime = 0L
@@ -165,6 +171,36 @@ object CelesTrakSatelliteSource {
 
     private fun noradOf(line1: String): String = line1.drop(2).take(5).trim()
 
+    private data class OrbitalElements(
+        val inclinationDeg: Double,
+        val eccentricity: Double,
+        val apogeeAltKm: Double,
+        val perigeeAltKm: Double,
+        val launchYear: Int?,
+    )
+
+    /** Pure string/math on the two TLE lines, no predict4java involved — column positions per the
+     * standard TLE format (verified against the same file's own mean-motion extraction in
+     * [fetchOrbitPeriod], which uses the identical column range). Apogee/perigee come from the
+     * semi-major axis implied by mean motion (Kepler's third law: a = cbrt(μ / n²)) combined with
+     * eccentricity, not from any live propagation — a satellite's *current* altitude ([alt] in
+     * [Satellite]) varies continuously between these two over one orbit. */
+    private fun parseOrbitalElements(line1: String, line2: String): OrbitalElements? = runCatching {
+        val inclinationDeg = line2.substring(8, 16).trim().toDouble()
+        val eccentricity = ("0." + line2.substring(26, 33).trim()).toDouble()
+        val meanMotion = line2.substring(52, 63).trim().toDouble() // revolutions/day
+
+        val intlDesig = line1.substring(9, 17).trim()
+        val launchYear = intlDesig.take(2).toIntOrNull()?.let { if (it < 57) 2000 + it else 1900 + it }
+
+        val meanMotionRadPerSec = meanMotion * 2.0 * Math.PI / 86_400.0
+        val semiMajorAxisKm = Math.cbrt(EARTH_MU_KM3_S2 / (meanMotionRadPerSec * meanMotionRadPerSec))
+        val apogeeAltKm = semiMajorAxisKm * (1 + eccentricity) - EARTH_RADIUS_KM
+        val perigeeAltKm = semiMajorAxisKm * (1 - eccentricity) - EARTH_RADIUS_KM
+
+        OrbitalElements(inclinationDeg, eccentricity, apogeeAltKm, perigeeAltKm, launchYear)
+    }.getOrNull()
+
     private fun propagate(tle: TleEntry): Satellite? {
         val position = runCatching {
             val t = TLE(arrayOf(tle.name, tle.line1, tle.line2))
@@ -183,6 +219,7 @@ object CelesTrakSatelliteSource {
         if (altKm < 80 || altKm > 60000) return null
 
         val mission = classifyMission(tle.name)
+        val elements = parseOrbitalElements(tle.line1, tle.line2)
         return Satellite(
             name = tle.name,
             lat = Math.round(latDeg * 10000) / 10000.0,
@@ -191,6 +228,11 @@ object CelesTrakSatelliteSource {
             mission = mission,
             category = categoryFor(tle.name, mission),
             noradId = noradOf(tle.line1),
+            inclinationDeg = elements?.inclinationDeg?.let { Math.round(it * 100) / 100.0 },
+            eccentricity = elements?.eccentricity,
+            apogeeAltKm = elements?.apogeeAltKm?.let { Math.round(it).toDouble() },
+            perigeeAltKm = elements?.perigeeAltKm?.let { Math.round(it).toDouble() },
+            launchYear = elements?.launchYear,
         )
     }
 

@@ -22,6 +22,20 @@ data class Satellite(
     val mission: String? = null,
     val category: String? = null, // comms | navigation | earth_obs | military | science | other
     val noradId: String? = null,
+    /** Orbital elements read straight off the TLE (see
+     * [com.osiris.app.data.source.CelesTrakSatelliteSource.parseOrbitalElements]) — the backend
+     * never had these at all, since it only ever propagated a position, never inspected the raw
+     * elements themselves. [apogeeAltKm]/[perigeeAltKm] are derived from mean motion +
+     * eccentricity via Kepler's third law, not observed directly — actual altitude varies
+     * continuously between the two over one orbit, [alt] above is just the instant this satellite
+     * was last propagated. */
+    val inclinationDeg: Double? = null,
+    val eccentricity: Double? = null,
+    val apogeeAltKm: Double? = null,
+    val perigeeAltKm: Double? = null,
+    /** Launch year from the TLE's International Designator (columns 10-17 of line 1) — e.g. the
+     * ISS's "98067A" means 1998. Null if that field is missing/malformed on this particular TLE. */
+    val launchYear: Int? = null,
 )
 
 /** Mirrors the JSON returned by GET /api/satellites/orbit?id=&t= — fetched on demand for one

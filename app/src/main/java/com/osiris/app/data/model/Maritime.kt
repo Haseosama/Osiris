@@ -41,7 +41,10 @@ data class Chokepoint(
     val risk: String, // LOW | MODERATE | ELEVATED | HIGH | CRITICAL
 )
 
-/** Only populated when the backend has AIS_API_KEY configured — otherwise always empty. */
+/** Only populated when the backend has AIS_API_KEY configured — otherwise always empty. Beyond
+ * the core position fields, [navStatus]/[callSign]/[imo]/[lengthM]/[widthM]/[draughtM]/[etaText]
+ * all come from the same AIS stream ([com.osiris.app.data.source.AisStreamSource]) — the raw
+ * PositionReport/ShipStaticData messages already carry them, they just weren't captured before. */
 @Serializable
 data class Ship(
     val id: Long? = null,
@@ -53,4 +56,15 @@ data class Ship(
     val name: String? = null,
     val destination: String? = null,
     val type: String? = null, // cargo | tanker | military
+    /** ITU-R M.1371 navigational status code (0-15) — see [com.osiris.app.data.source.AisStreamSource.navStatusLabel].
+     * Explains a lot of "why isn't this ship moving": 1/5/6 are anchored/moored/aground. */
+    val navStatus: Int? = null,
+    val callSign: String? = null,
+    val imo: Long? = null,
+    val lengthM: Double? = null,
+    val widthM: Double? = null,
+    val draughtM: Double? = null,
+    /** Pre-formatted since raw AIS ETA has no year field (just month/day/hour/minute) — see
+     * [com.osiris.app.data.source.AisStreamSource.formatEta]. */
+    val etaText: String? = null,
 )
