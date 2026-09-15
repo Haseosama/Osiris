@@ -66,8 +66,17 @@ class SphereMesh(latBands: Int = 48, lonBands: Int = 96, radius: Float = 1f) {
             for (lon in 0 until lonBands) {
                 val first = lat * (lonBands + 1) + lon
                 val second = first + lonBands + 1
-                indices.add(first.toShort()); indices.add(second.toShort()); indices.add((first + 1).toShort())
-                indices.add(second.toShort()); indices.add((second + 1).toShort()); indices.add((first + 1).toShort())
+                // Winding matters here: GlobeRenderer enables GL_CULL_FACE/GL_BACK with the GLES
+                // default glFrontFace (GL_CCW), so a triangle must be counter-clockwise *as seen
+                // from outside the sphere* to survive culling. (first, second, first+1) is the
+                // opposite (clockwise-from-outside) order for this particular (theta, phi)
+                // parametrization — with that ordering GL culls exactly the hemisphere facing the
+                // camera and instead draws the far hemisphere with its normals pointing away from
+                // the viewer, which reads as a dim, washed-out, almost hollow-looking globe (every
+                // fragment's diffuse term clamps to 0, leaving only the ambient floor). Swapping
+                // the last two indices of each triangle flips it to the correct outward winding.
+                indices.add(first.toShort()); indices.add((first + 1).toShort()); indices.add(second.toShort())
+                indices.add(second.toShort()); indices.add((first + 1).toShort()); indices.add((second + 1).toShort())
             }
         }
         indexCount = indices.size

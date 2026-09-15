@@ -430,26 +430,36 @@ fun GlobeScreen(
     }
 }
 
-/** Smoothly rotates [renderer] so [GlobeRenderer.centerLatLng] ends up at ([targetLat],
- * [targetLng]) — used by both the location FAB and search-result selection. Plain per-frame field
+/** How close [flyGlobeTo] zooms in by default — noticeably closer than the resting `zoom = 1f`
+ * (see [GlobeRenderer.zoom]) so a location/search jump actually reads as "zoom to this point," not
+ * just a rotation, while staying comfortably above [ZOOM_TO_FLAT_MAP_THRESHOLD] (0.62f) so landing
+ * here never itself triggers the globe-to-flat-map handoff — that stays a deliberate pinch gesture,
+ * not a side effect of tapping a search result or the location button. */
+private const val FLY_TO_ZOOM = 0.75f
+
+/** Smoothly rotates and zooms [renderer] so [GlobeRenderer.centerLatLng] ends up at ([targetLat],
+ * [targetLng]), used by both the location FAB and search-result selection. Plain per-frame field
  * writes (same `@Volatile` fields [GlobeSurfaceView]'s touch handling writes directly) rather than
  * a Compose `Animatable`: this is a fire-and-forget coroutine kicked off from a click callback, not
  * something composition needs to observe. [deltaY] takes the shorter way around the 360° wrap
  * (e.g. animating from -170° to 170° goes through 180°, a 20° turn, not the 340° long way) — [deltaX]
  * needs no such wrap since [GlobeRenderer.rotationX] never leaves [-90, 90]. */
-private suspend fun flyGlobeTo(renderer: GlobeRenderer, targetLat: Double, targetLng: Double) {
+private suspend fun flyGlobeTo(renderer: GlobeRenderer, targetLat: Double, targetLng: Double, targetZoom: Float = FLY_TO_ZOOM) {
     val (targetX, targetY) = renderer.rotationFor(targetLat, targetLng)
     val startX = renderer.rotationX
     val startY = renderer.rotationY
+    val startZoom = renderer.zoom
     var deltaY = (targetY - startY) % 360f
     if (deltaY > 180f) deltaY -= 360f
     if (deltaY < -180f) deltaY += 360f
     val deltaX = targetX - startX
+    val deltaZoom = targetZoom - startZoom
     val steps = 24
     repeat(steps) { i ->
         val t = (i + 1) / steps.toFloat()
         renderer.rotationX = startX + deltaX * t
         renderer.rotationY = startY + deltaY * t
+        renderer.zoom = startZoom + deltaZoom * t
         delay(16L)
     }
 }
